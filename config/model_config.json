@@ -1,0 +1,11 @@
+{
+  "providers": {
+      "ollama": {
+          "type": "ollama",
+          "model_name": "mistral:latest",
+          "base_url": "http://localhost:11434",
+          "temperature": 0.1
+      }
+  },
+  "default_provider": "ollama" 
+}

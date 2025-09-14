@@ -13,8 +13,10 @@ The core problem being solved is that traditional LLMs fail at the precision, mu
 3. **Tertiary Goal**: Create a maintainable, well-architected system that showcases best practices
 4. **Implementation Goals**:
    - Focus on benchmark-specific weaknesses (tactical questions, assumption handling)
+      - Focus on assumption-based questions (2.2% → 10%+ accuracy)
    - Deliver clean, documented code suitable for evaluation
-   - Complete development within 8-10 hour timeframe
+   - Implement basic tactical question handling
+
 
 ## User Stories
 
@@ -118,14 +120,15 @@ The core problem being solved is that traditional LLMs fail at the precision, mu
 
 ## Success Metrics
 
-### Primary Metrics (Documentation & Code Quality)
-- **Code coverage** ≥ 80% for core agent functionality
-- **Documentation completeness** including agent card, design approach, and trade-offs analysis
-- **Code quality scores** using linting tools (pylint/flake8) with minimal violations
-- **Modular design assessment** based on separation of concerns and interface clarity
-
-### Secondary Metrics (Benchmark Performance)
+### Primary Metrics
 - **Overall FinanceQA score improvement** over 54.1% baseline
+- **Assumption-based question accuracy** improvement (target: 5-15%)
+- **Working demonstration** of core functionality
+- **Documentation completeness** including agent card, design approach, and trade-offs analysis
+
+### Secondary Metrics
+- **Code coverage** ≥ 70% for core agent functionality
+- **Modular design assessment** based on separation of concerns and interface clarity
 - **Question type breakdown** performance on tactical-basic, tactical-assumption, and conceptual categories
 - **Reasoning quality** assessed through manual review of explanation chains
 

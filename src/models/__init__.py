@@ -1,0 +1,1 @@
+"""Model management for Ollama and OpenAI providers."""

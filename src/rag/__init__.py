@@ -1,0 +1,1 @@
+"""RAG system for financial knowledge retrieval."""

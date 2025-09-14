@@ -1,0 +1,58 @@
+name: financeqa-agent
+channels:
+  - conda-forge
+  - defaults
+dependencies:
+  - python>=3.9,<3.12
+  - pip
+  - pip:
+    # Core LLM and Agent Framework
+    - langchain>=0.1.0
+    - langchain-community>=0.0.20
+    - langchain-openai>=0.0.5
+    - openai>=1.10.0
+
+    # Local Model Integration
+    - ollama>=0.1.7
+
+    # Vector Store and RAG
+    - chromadb>=0.4.22
+    - sentence-transformers>=2.2.2
+
+    # Data Processing
+    - pandas>=2.0.0
+    - numpy>=1.24.0
+    - datasets>=2.14.0
+
+    # Document Processing
+    - pypdf2>=3.0.1
+    - pdfplumber>=0.10.0
+
+    # Secure Code Execution
+    - restrictedpython>=6.2
+
+    # Testing Framework
+    - pytest>=7.4.0
+    - pytest-cov>=4.1.0
+    - pytest-asyncio>=0.21.0
+
+    # Code Quality
+    - black>=23.0.0
+    - flake8>=6.0.0
+    - mypy>=1.5.0
+
+    # Async Support
+    - aiohttp>=3.8.0
+    - asyncio-throttle>=1.0.2
+
+    # Configuration and Environment
+    - python-dotenv>=1.0.0
+    - pydantic>=2.0.0
+    - pydantic-settings>=2.0.0
+
+    # Logging and Monitoring
+    - structlog>=23.0.0
+
+    # Development Tools
+    - ipython>=8.10.0
+    - jupyter>=1.0.0
