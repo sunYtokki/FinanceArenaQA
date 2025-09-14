@@ -156,16 +156,18 @@ class Tool(ABC):
 class Agent:
     """Base agent class with reasoning chain interface."""
 
-    def __init__(self, model_manager, tools: Optional[List[Tool]] = None):
+    def __init__(self, model_manager, tools: Optional[List[Tool]] = None, max_steps: int = 15):
         """Initialize agent with model manager and tools.
 
         Args:
             model_manager: ModelManager instance for LLM access
             tools: List of available tools for the agent
+            max_steps: Maximum number of reasoning steps to prevent infinite loops
         """
         self.model_manager = model_manager
         self.tools = {tool.name: tool for tool in (tools or [])}
         self.reasoning_chains: Dict[str, ReasoningChain] = {}
+        self.max_steps = max_steps
 
     async def answer_question(self, question: str, **kwargs) -> ReasoningChain:
         """Answer a financial question using multi-step reasoning.
@@ -188,12 +190,27 @@ class Agent:
             analysis_step = await self._safe_execute_step(self._analyze_question, question, chain)
             chain.add_step(analysis_step)
 
+            # Check max steps limit
+            if len(chain.steps) >= self.max_steps:
+                logger.warning(f"Reached max steps limit ({self.max_steps}), stopping early")
+                return chain
+
             # Step 2: Generate reasoning plan
             plan_step = await self._safe_execute_step(self._generate_reasoning_plan, chain)
             chain.add_step(plan_step)
 
+            # Check max steps limit
+            if len(chain.steps) >= self.max_steps:
+                logger.warning(f"Reached max steps limit ({self.max_steps}), stopping early")
+                return chain
+
             # Step 3: Execute reasoning steps
             await self._execute_reasoning_plan(chain)
+
+            # Check max steps limit
+            if len(chain.steps) >= self.max_steps:
+                logger.warning(f"Reached max steps limit ({self.max_steps}), stopping early")
+                return chain
 
             # Step 4: Synthesize final answer
             synthesis_step = await self._safe_execute_step(self._synthesize_answer, chain)
@@ -317,8 +334,18 @@ class Agent:
 
     async def _execute_reasoning_plan(self, chain: ReasoningChain) -> None:
         """Execute the reasoning plan step by step with tool orchestration."""
+        # Check max steps before proceeding
+        if len(chain.steps) >= self.max_steps:
+            logger.warning(f"Max steps reached, skipping reasoning plan execution")
+            return
+
         # First, classify the question to determine approach
         await self._classify_and_route(chain)
+
+        # Check max steps after classification
+        if len(chain.steps) >= self.max_steps:
+            logger.warning(f"Max steps reached after classification, stopping")
+            return
 
         # Then execute the appropriate reasoning approach
         question_classification = self._get_question_classification(chain)
@@ -1023,11 +1050,21 @@ class Agent:
             logger.error(f"Step {step_func.__name__} failed: {e}")
             return step
 
-    async def _safe_model_generate(self, prompt: str, fallback_message: str = None) -> str:
-        """Safely generate LLM response with fallback."""
+    async def _safe_model_generate(self, prompt: str, fallback_message: str = None, timeout: int = 60) -> str:
+        """Safely generate LLM response with fallback and timeout."""
         try:
-            response = await self.model_manager.generate(prompt)
+            # Add timeout to prevent hanging on model requests
+            response = await asyncio.wait_for(
+                self.model_manager.generate(prompt),
+                timeout=timeout
+            )
+            if not response.content or response.content.strip() == "":
+                logger.warning("Empty response from model, using fallback")
+                return fallback_message or "Unable to generate response due to technical issues."
             return response.content
+        except asyncio.TimeoutError:
+            logger.error(f"LLM generation timed out after {timeout}s")
+            return fallback_message or "Request timed out."
         except Exception as e:
             logger.error(f"LLM generation failed: {e}")
             return fallback_message or "Unable to generate response due to technical issues."

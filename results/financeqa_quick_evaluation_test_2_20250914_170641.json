@@ -1,0 +1,69 @@
+{
+  "evaluation_summary": {
+    "exact_match_accuracy": 0.0,
+    "normalized_match_accuracy": 0.0,
+    "error_rate": 0.0,
+    "total_examples": 2,
+    "exact_matches": 0,
+    "normalized_matches": 0,
+    "errors": 0,
+    "by_question_type": {
+      "basic": {
+        "exact_match_accuracy": 0.0,
+        "normalized_match_accuracy": 0.0,
+        "error_rate": 0.0,
+        "total_examples": 2
+      }
+    }
+  },
+  "total_examples": 2,
+  "total_processing_time": 83.04438591003418,
+  "average_processing_time": 41.52219295501709,
+  "detailed_results": [
+    {
+      "question": "What is Gross Profit in the year ending 2024?",
+      "ground_truth": "$32,095 (in millions)",
+      "predicted_answer": " The Gross Profit for the year ending 2024 can be estimated by using the historical gross profit margin of around 24%. If we apply this to the net sales figure provided ($249,625 million), we get an estimated Gross Profit of approximately $59,910 million.\n\nHowever, it's important to note that this is an estimate based on historical data and may not accurately reflect the actual Gross Profit for 2024 due to potential changes in market conditions or other factors.",
+      "exact_match": false,
+      "normalized_match": false,
+      "question_type": "basic",
+      "company": "Costco",
+      "processing_time": 40.11850357055664,
+      "error_message": null,
+      "reasoning_steps": [
+        "Analyze question type and requirements",
+        "Generate reasoning plan",
+        "Classify question type for routing",
+        "Identify missing data",
+        "Generate reasonable assumptions",
+        "Execute financial calculations",
+        "Perform sensitivity analysis",
+        "Synthesize final answer"
+      ],
+      "confidence_score": 1.0
+    },
+    {
+      "question": "What is unadjusted EBITDA for the year ending in 2024?",
+      "ground_truth": "$11,522 (in millions)",
+      "predicted_answer": " The Unadjusted EBITDA for the year ending in 2024 cannot be calculated directly from the provided data as we are missing information about interest expense and taxes. However, assuming a zero interest expense and a tax rate of 21% on operating income, the estimated Unadjusted EBITDA would be approximately $11,145 million dollars. Keep in mind that these assumptions might not reflect the actual financial situation of the company.",
+      "exact_match": false,
+      "normalized_match": false,
+      "question_type": "basic",
+      "company": "Costco",
+      "processing_time": 42.92588233947754,
+      "error_message": null,
+      "reasoning_steps": [
+        "Analyze question type and requirements",
+        "Generate reasoning plan",
+        "Classify question type for routing",
+        "Identify missing data",
+        "Generate reasonable assumptions",
+        "Execute financial calculations",
+        "Perform sensitivity analysis",
+        "Synthesize final answer"
+      ],
+      "confidence_score": 1.0
+    }
+  ],
+  "evaluation_timestamp": "2025-09-14T17:06:41.907634"
+}

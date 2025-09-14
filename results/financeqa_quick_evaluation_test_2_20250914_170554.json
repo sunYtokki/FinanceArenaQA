@@ -1,0 +1,55 @@
+{
+  "evaluation_summary": {
+    "exact_match_accuracy": 0.0,
+    "normalized_match_accuracy": 0.0,
+    "error_rate": 0.0,
+    "total_examples": 2,
+    "exact_matches": 0,
+    "normalized_matches": 0,
+    "errors": 0,
+    "by_question_type": {
+      "basic": {
+        "exact_match_accuracy": 0.0,
+        "normalized_match_accuracy": 0.0,
+        "error_rate": 0.0,
+        "total_examples": 2
+      }
+    }
+  },
+  "total_examples": 2,
+  "total_processing_time": 4.673004150390625e-05,
+  "average_processing_time": 2.3365020751953125e-05,
+  "detailed_results": [
+    {
+      "question": "What is Gross Profit in the year ending 2024?",
+      "ground_truth": "$32,095 (in millions)",
+      "predicted_answer": "Mock answer for testing.",
+      "exact_match": false,
+      "normalized_match": false,
+      "question_type": "basic",
+      "company": "Costco",
+      "processing_time": 2.8133392333984375e-05,
+      "error_message": null,
+      "reasoning_steps": [
+        "Mock analysis"
+      ],
+      "confidence_score": 1.0
+    },
+    {
+      "question": "What is unadjusted EBITDA for the year ending in 2024?",
+      "ground_truth": "$11,522 (in millions)",
+      "predicted_answer": "Mock answer for testing.",
+      "exact_match": false,
+      "normalized_match": false,
+      "question_type": "basic",
+      "company": "Costco",
+      "processing_time": 1.8596649169921875e-05,
+      "error_message": null,
+      "reasoning_steps": [
+        "Mock analysis"
+      ],
+      "confidence_score": 1.0
+    }
+  ],
+  "evaluation_timestamp": "2025-09-14T17:05:54.331733"
+}
