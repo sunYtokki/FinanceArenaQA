@@ -5,14 +5,14 @@ This module provides functionality to evaluate financial QA agents on the Financ
 dataset with exact match scoring and detailed performance metrics.
 """
 
+import asyncio
 import json
 import re
 import time
-import asyncio
-import inspect
 from pathlib import Path
-from typing import Dict, List, Any, Optional, Protocol
+from typing import Dict, List, Any, Optional, Tuple, Protocol
 from dataclasses import dataclass
+from abc import ABC, abstractmethod
 
 import pandas as pd
 from tqdm import tqdm
@@ -68,7 +68,7 @@ class EvaluationResult:
 class FinancialAgent(Protocol):
     """Protocol defining the interface for financial QA agents."""
 
-    def answer_question(self, question: str) -> Any:
+    async def answer_question(self, question: str) -> Any:
         """
         Answer a financial question.
 
@@ -182,39 +182,6 @@ class FinanceQAEvaluator:
         self.dataset_path = Path(dataset_path)
         self.scorer = ExactMatchScorer()
 
-    def _call_agent(self, agent: FinancialAgent, question: str):
-        """
-        Call agent.answer_question, handling both sync and async methods.
-
-        Args:
-            agent: Agent implementing the FinancialAgent protocol
-            question: Question to ask the agent
-
-        Returns:
-            Result from agent.answer_question
-        """
-        # Check if the answer_question method is async
-        if inspect.iscoroutinefunction(agent.answer_question):
-            # Agent is async, run it in sync context
-            try:
-                # Try to get existing event loop
-                loop = asyncio.get_event_loop()
-                if loop.is_running():
-                    # We're in an async context, need to run in executor
-                    import concurrent.futures
-                    with concurrent.futures.ThreadPoolExecutor() as executor:
-                        future = executor.submit(asyncio.run, agent.answer_question(question))
-                        return future.result()
-                else:
-                    # No running loop, safe to use run
-                    return loop.run_until_complete(agent.answer_question(question))
-            except RuntimeError:
-                # No event loop, create one
-                return asyncio.run(agent.answer_question(question))
-        else:
-            # Agent is sync, call directly
-            return agent.answer_question(question)
-
     def load_dataset(self, split: str = "test") -> List[EvaluationExample]:
         """
         Load dataset examples from a specific split.
@@ -238,7 +205,7 @@ class FinanceQAEvaluator:
 
         return examples
 
-    def evaluate_agent(
+    async def evaluate_agent_async(
         self,
         agent: FinancialAgent,
         examples: Optional[List[EvaluationExample]] = None,
@@ -271,15 +238,17 @@ class FinanceQAEvaluator:
         # Progress bar
         iterator = tqdm(examples, desc="Evaluating") if verbose else examples
 
-        # Sequential evaluation
-        for example in iterator:
+        # Handle async execution
+        import asyncio
+
+        async def evaluate_single_example(example):
             try:
                 # Combine context and question
                 full_question = f"Context: {example.context}\n\nQuestion: {example.question}" if example.context else example.question
 
                 # Time the agent response
                 start_time = time.time()
-                reasoning_chain = self._call_agent(agent, full_question)
+                reasoning_chain = await agent.answer_question(full_question)
                 processing_time = time.time() - start_time
 
                 # Extract answer from reasoning chain
@@ -311,7 +280,7 @@ class FinanceQAEvaluator:
                 exact_match = self.scorer.compute_exact_match(answer, example.answer)
                 normalized_match = self.scorer.compute_normalized_match(answer, example.answer)
 
-                result = EvaluationResult(
+                return EvaluationResult(
                     example=example,
                     agent_response=agent_response,
                     exact_match=exact_match,
@@ -321,7 +290,7 @@ class FinanceQAEvaluator:
 
             except Exception as e:
                 # Handle agent errors gracefully
-                result = EvaluationResult(
+                return EvaluationResult(
                     example=example,
                     agent_response=AgentResponse(answer=""),
                     exact_match=False,
@@ -330,8 +299,44 @@ class FinanceQAEvaluator:
                     error_message=str(e)
                 )
 
-            results.append(result)
-            total_processing_time += result.processing_time
+        # Run async evaluation with concurrency limits to prevent resource exhaustion
+        async def run_evaluation():
+            # Limit concurrent evaluations to prevent Ollama server overload
+            semaphore = asyncio.Semaphore(3)  # Max 3 concurrent evaluations
+
+            async def evaluate_with_semaphore(example):
+                async with semaphore:
+                    return await evaluate_single_example(example)
+
+            # Add timeout per evaluation to prevent infinite loops
+            async def evaluate_with_timeout(example):
+                try:
+                    return await asyncio.wait_for(evaluate_with_semaphore(example), timeout=300.0)  # 5 min timeout
+                except asyncio.TimeoutError:
+                    return EvaluationResult(
+                        example=example,
+                        agent_response=AgentResponse(answer="Timeout: Agent took too long to respond"),
+                        exact_match=False,
+                        normalized_match=False,
+                        processing_time=300.0,
+                        error_message="Evaluation timeout after 300 seconds"
+                    )
+
+            tasks = [evaluate_with_timeout(example) for example in examples]
+            return await asyncio.gather(*tasks, return_exceptions=True)
+
+        # Execute async evaluation
+        try:
+            results = await run_evaluation()
+            total_processing_time = sum(r.processing_time for r in results)
+        finally:
+            # Clean up any sessions in the model manager
+            if hasattr(agent, 'model_manager') and hasattr(agent.model_manager, 'close_all'):
+                try:
+                    await agent.model_manager.close_all()
+                except Exception as e:
+                    # Don't fail the evaluation for cleanup issues
+                    pass
 
         # Compute overall metrics
         metrics = self.compute_metrics(results)
@@ -344,6 +349,54 @@ class FinanceQAEvaluator:
             'average_processing_time': total_processing_time / len(results) if results else 0.0
         }
 
+    def evaluate_agent(
+        self,
+        agent: FinancialAgent,
+        examples: Optional[List[EvaluationExample]] = None,
+        split: str = "test",
+        max_examples: Optional[int] = None,
+        verbose: bool = True
+    ) -> Dict[str, Any]:
+        """
+        Synchronous wrapper for evaluate_agent_async to maintain backwards compatibility.
+
+        Args:
+            agent: Agent implementing the FinancialAgent protocol
+            examples: Specific examples to evaluate (if None, loads from split)
+            split: Dataset split to use if examples not provided
+            max_examples: Maximum number of examples to evaluate
+            verbose: Whether to show progress bars
+
+        Returns:
+            Dictionary containing evaluation results and metrics
+        """
+        try:
+            # Try to get the current running loop
+            loop = asyncio.get_running_loop()
+            # If we're in a loop, we need to run in a new thread to avoid deadlock
+            import concurrent.futures
+            import threading
+
+            def run_in_thread():
+                # Create new event loop for this thread
+                new_loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(new_loop)
+                try:
+                    return new_loop.run_until_complete(
+                        self.evaluate_agent_async(agent, examples, split, max_examples, verbose)
+                    )
+                finally:
+                    new_loop.close()
+
+            with concurrent.futures.ThreadPoolExecutor() as executor:
+                future = executor.submit(run_in_thread)
+                return future.result()
+
+        except RuntimeError:
+            # No running loop, can use asyncio.run directly
+            return asyncio.run(
+                self.evaluate_agent_async(agent, examples, split, max_examples, verbose)
+            )
 
     def compute_metrics(self, results: List[EvaluationResult]) -> Dict[str, Any]:
         """
@@ -448,7 +501,7 @@ class FinanceQAEvaluator:
 class DummyAgent:
     """Dummy agent for testing the evaluation harness."""
 
-    def answer_question(self, question: str):
+    async def answer_question(self, question: str):
         """
         Dummy implementation that returns a simple response.
 
