@@ -981,7 +981,7 @@ class Agent:
                     
             synthesis_prompt = f"""
             Based on all the reasoning steps, provide a final answer to the question.
-            Final Answer format rules:
+            Final answer format rules:
             1. If numeric:
             - For currency: prefix with "$", include commas, round to 2 decimals if needed,
                 and add scale notes if provided (e.g., "in millions").
@@ -989,13 +989,11 @@ class Agent:
             2. If comparison/boolean: answer only "Yes" or "No".
             3. If conceptual impact: answer only with a short phrase
             (e.g., "No change", "Increase", "Decrease").
-            4. Do not include reasoning, context, or extra words.
+            4. Do NOT include reasoning, context, or extra words. Only answer the Original Question.
 
             Original Question: {chain.question}
             Reasoning Context:
             {context}
-
-            Final Answer:
             """
 
             synthesis_prompt_ver1 = f"""

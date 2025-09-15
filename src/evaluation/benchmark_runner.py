@@ -275,7 +275,7 @@ class FinanceQAEvaluator:
         for example in iterator:
             try:
                 # Combine context and question
-                full_question = f"Context: {example.context}\n\nQuestion: {example.question}" if example.context else example.question
+                full_question = f"Original Question: {example.question} \n Context: {example.context}\n" if example.context else example.question
 
                 # Time the agent response
                 start_time = time.time()

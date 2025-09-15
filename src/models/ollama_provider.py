@@ -61,6 +61,7 @@ class OllamaProvider(ModelProvider):
             "stream": False,  # We want complete response
             "options": {
                 "temperature": self.config.temperature,
+                "num_predict": self.config.max_tokens,
                 **(self.config.provider_options or {})
             }
         }
