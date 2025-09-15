@@ -13,6 +13,7 @@ import inspect
 from pathlib import Path
 from typing import Dict, List, Any, Optional, Protocol
 from dataclasses import dataclass
+import concurrent.futures
 
 import pandas as pd
 from tqdm import tqdm
@@ -201,7 +202,6 @@ class FinanceQAEvaluator:
                 loop = asyncio.get_event_loop()
                 if loop.is_running():
                     # We're in an async context, need to run in executor
-                    import concurrent.futures
                     with concurrent.futures.ThreadPoolExecutor() as executor:
                         future = executor.submit(asyncio.run, agent.answer_question(question))
                         return future.result()

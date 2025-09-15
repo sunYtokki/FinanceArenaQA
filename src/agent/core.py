@@ -191,26 +191,26 @@ class Agent:
             chain.add_step(analysis_step)
 
             # Check max steps limit
-            if len(chain.steps) >= self.max_steps:
-                logger.warning(f"Reached max steps limit ({self.max_steps}), stopping early")
-                return chain
+            # if len(chain.steps) >= self.max_steps:
+            #     logger.warning(f"Reached max steps limit ({self.max_steps}), stopping early")
+            #     return chain
 
             # Step 2: Generate reasoning plan
             plan_step = await self._safe_execute_step(self._generate_reasoning_plan, chain)
             chain.add_step(plan_step)
 
             # Check max steps limit
-            if len(chain.steps) >= self.max_steps:
-                logger.warning(f"Reached max steps limit ({self.max_steps}), stopping early")
-                return chain
+            # if len(chain.steps) >= self.max_steps:
+            #     logger.warning(f"Reached max steps limit ({self.max_steps}), stopping early")
+            #     return chain
 
             # Step 3: Execute reasoning steps
             await self._execute_reasoning_plan(chain)
 
             # Check max steps limit
-            if len(chain.steps) >= self.max_steps:
-                logger.warning(f"Reached max steps limit ({self.max_steps}), stopping early")
-                return chain
+            # if len(chain.steps) >= self.max_steps:
+            #     logger.warning(f"Reached max steps limit ({self.max_steps}), stopping early")
+            #     return chain
 
             # Step 4: Synthesize final answer
             synthesis_step = await self._safe_execute_step(self._synthesize_answer, chain)
@@ -977,15 +977,32 @@ class Agent:
                 if reasoning_step.output_data:
                     context += f"Step: {reasoning_step.description}\n"
                     context += f"Result: {reasoning_step.output_data}\n\n"
-
+                    
+                    
             synthesis_prompt = f"""
             Based on all the reasoning steps, provide a final answer to the question.
+            Final Answer format rules:
+            1. If numeric:
+            - For currency: prefix with "$", include commas, round to 2 decimals if needed,
+                and add scale notes if provided (e.g., "in millions").
+            - For percentages: include "%" with two decimal places.
+            2. If comparison/boolean: answer only "Yes" or "No".
+            3. If conceptual impact: answer only with a short phrase
+            (e.g., "No change", "Increase", "Decrease").
+            4. Do not include reasoning, context, or extra words.
 
             Original Question: {chain.question}
-
             Reasoning Context:
             {context}
 
+            Final Answer:
+            """
+
+            synthesis_prompt_ver1 = f"""
+            Based on all the reasoning steps, provide a final answer to the question.
+            Original Question: {chain.question}
+            Reasoning Context:
+            {context}
             Provide a clear, concise final answer.
             """
 
