@@ -129,30 +129,223 @@ class FinancialCalculator(FinancialTool):
         }
 
     def _calculate_npv(self, numbers: list, question: str) -> Dict[str, Any]:
-        """Simple NPV calculation."""
+        """Enhanced NPV calculation with cash flow analysis and assumptions tracking."""
         if len(numbers) < 2:
             return {"error": "Need initial investment and cash flows for NPV"}
 
-        # Simplified NPV assuming 10% discount rate
-        discount_rate = 0.10
-        initial_investment = numbers[0]
+        # Extract discount rate from question or use default
+        discount_rate = self._extract_discount_rate(question)
+        initial_investment = abs(numbers[0])  # Make positive for calculation
         cash_flows = numbers[1:]
 
-        npv = -initial_investment
-        for i, cf in enumerate(cash_flows):
-            npv += cf / ((1 + discount_rate) ** (i + 1))
+        # Track assumptions made
+        assumptions = []
 
-        return {
-            "calculation": "NPV",
-            "formula": "Sum of discounted cash flows - initial investment",
+        if "discount" not in question.lower() and "rate" not in question.lower():
+            assumptions.append(f"Assumed discount rate of {discount_rate*100:.1f}% (market average)")
+
+        # Perform NPV calculation with detailed tracking
+        npv_calculation = self._perform_npv_calculation(initial_investment, cash_flows, discount_rate)
+
+        # Analyze cash flow patterns
+        cash_flow_analysis = self._analyze_cash_flows(cash_flows)
+
+        # Calculate additional metrics
+        profitability_index = (npv_calculation['present_value_of_cash_flows'] / initial_investment) if initial_investment > 0 else 0
+        payback_period = self._calculate_payback_period(initial_investment, cash_flows)
+
+        # Risk assessment
+        risk_factors = self._assess_npv_risks(cash_flows, discount_rate)
+
+        result = {
+            "calculation": "Enhanced NPV Analysis",
+            "formula": "NPV = Σ(CFt / (1 + r)^t) - Initial Investment",
             "inputs": {
                 "initial_investment": initial_investment,
                 "cash_flows": cash_flows,
-                "discount_rate": discount_rate
+                "discount_rate": discount_rate,
+                "number_of_periods": len(cash_flows)
             },
-            "result": npv,
-            "interpretation": "Positive NPV indicates profitable investment"
+            "npv_result": npv_calculation['npv'],
+            "present_value_of_cash_flows": npv_calculation['present_value_of_cash_flows'],
+            "detailed_calculation": npv_calculation['year_by_year'],
+            "profitability_index": profitability_index,
+            "payback_period": payback_period,
+            "cash_flow_analysis": cash_flow_analysis,
+            "assumptions": assumptions,
+            "risk_assessment": risk_factors,
+            "interpretation": self._interpret_npv_result(npv_calculation['npv'], profitability_index, risk_factors)
         }
+
+        return result
+
+    def _extract_discount_rate(self, question: str) -> float:
+        """Extract discount rate from question or return default."""
+        import re
+
+        # Look for percentage patterns
+        rate_pattern = r'(\d+\.?\d*)%'
+        rate_matches = re.findall(rate_pattern, question.lower())
+
+        if rate_matches:
+            return float(rate_matches[0]) / 100
+
+        # Look for decimal patterns with rate keywords
+        decimal_pattern = r'(?:rate|discount|wacc).*?(\d+\.?\d*)'
+        decimal_matches = re.findall(decimal_pattern, question.lower())
+
+        if decimal_matches:
+            rate = float(decimal_matches[0])
+            # Convert to decimal if it seems to be a percentage
+            if rate > 1:
+                rate = rate / 100
+            return rate
+
+        # Default market rate
+        return 0.10
+
+    def _perform_npv_calculation(self, initial_investment: float, cash_flows: list, discount_rate: float) -> Dict[str, Any]:
+        """Perform detailed NPV calculation with year-by-year breakdown."""
+        year_by_year = []
+        total_pv = 0
+
+        for year, cash_flow in enumerate(cash_flows, 1):
+            discount_factor = 1 / ((1 + discount_rate) ** year)
+            present_value = cash_flow * discount_factor
+            total_pv += present_value
+
+            year_by_year.append({
+                "year": year,
+                "cash_flow": cash_flow,
+                "discount_factor": discount_factor,
+                "present_value": present_value,
+                "cumulative_pv": total_pv
+            })
+
+        npv = total_pv - initial_investment
+
+        return {
+            "npv": npv,
+            "present_value_of_cash_flows": total_pv,
+            "year_by_year": year_by_year
+        }
+
+    def _analyze_cash_flows(self, cash_flows: list) -> Dict[str, Any]:
+        """Analyze cash flow patterns and characteristics."""
+        if not cash_flows:
+            return {"error": "No cash flows to analyze"}
+
+        analysis = {
+            "total_cash_flows": sum(cash_flows),
+            "average_annual_cash_flow": sum(cash_flows) / len(cash_flows),
+            "cash_flow_growth": [],
+            "volatility": 0,
+            "pattern": "irregular"
+        }
+
+        # Calculate year-over-year growth rates
+        for i in range(1, len(cash_flows)):
+            if cash_flows[i-1] != 0:
+                growth = ((cash_flows[i] - cash_flows[i-1]) / abs(cash_flows[i-1])) * 100
+                analysis["cash_flow_growth"].append(growth)
+
+        # Calculate volatility (standard deviation of cash flows)
+        if len(cash_flows) > 1:
+            mean = analysis["average_annual_cash_flow"]
+            variance = sum((cf - mean) ** 2 for cf in cash_flows) / len(cash_flows)
+            analysis["volatility"] = variance ** 0.5
+
+        # Determine pattern
+        if all(cf > 0 for cf in cash_flows):
+            if len(analysis["cash_flow_growth"]) > 0:
+                avg_growth = sum(analysis["cash_flow_growth"]) / len(analysis["cash_flow_growth"])
+                if avg_growth > 5:
+                    analysis["pattern"] = "growing"
+                elif avg_growth < -5:
+                    analysis["pattern"] = "declining"
+                else:
+                    analysis["pattern"] = "stable"
+            else:
+                analysis["pattern"] = "single_period"
+        else:
+            analysis["pattern"] = "mixed"
+
+        return analysis
+
+    def _calculate_payback_period(self, initial_investment: float, cash_flows: list) -> Optional[float]:
+        """Calculate payback period for the investment."""
+        cumulative_cash_flow = 0
+
+        for year, cash_flow in enumerate(cash_flows, 1):
+            cumulative_cash_flow += cash_flow
+            if cumulative_cash_flow >= initial_investment:
+                # Linear interpolation for more precise payback period
+                if year == 1:
+                    return year - (cumulative_cash_flow - initial_investment) / cash_flow
+                else:
+                    prev_cumulative = cumulative_cash_flow - cash_flow
+                    return year - 1 + (initial_investment - prev_cumulative) / cash_flow
+
+        return None  # Payback not achieved within the given period
+
+    def _assess_npv_risks(self, cash_flows: list, discount_rate: float) -> Dict[str, Any]:
+        """Assess risks associated with the NPV calculation."""
+        risks = {
+            "discount_rate_sensitivity": "medium",
+            "cash_flow_uncertainty": "medium",
+            "key_risks": []
+        }
+
+        # Discount rate sensitivity
+        if discount_rate > 0.15:
+            risks["discount_rate_sensitivity"] = "high"
+            risks["key_risks"].append("High discount rate increases sensitivity to rate changes")
+        elif discount_rate < 0.05:
+            risks["discount_rate_sensitivity"] = "low"
+            risks["key_risks"].append("Low discount rate - consider if realistic for project risk")
+
+        # Cash flow uncertainty assessment
+        if len(cash_flows) > 5:
+            risks["cash_flow_uncertainty"] = "high"
+            risks["key_risks"].append("Long-term projections have higher uncertainty")
+
+        # Check for negative cash flows
+        negative_flows = [cf for cf in cash_flows if cf < 0]
+        if negative_flows:
+            risks["key_risks"].append(f"Contains {len(negative_flows)} negative cash flows")
+
+        # Check for very large later cash flows
+        if len(cash_flows) > 1:
+            early_avg = sum(cash_flows[:2]) / 2 if len(cash_flows) >= 2 else cash_flows[0]
+            late_flows = cash_flows[2:] if len(cash_flows) > 2 else []
+            if late_flows and any(cf > early_avg * 3 for cf in late_flows):
+                risks["key_risks"].append("Large later cash flows increase projection risk")
+
+        return risks
+
+    def _interpret_npv_result(self, npv: float, profitability_index: float, risk_factors: Dict[str, Any]) -> str:
+        """Provide comprehensive interpretation of NPV results."""
+        if npv > 0:
+            interpretation = f"Positive NPV of ${npv:,.2f} indicates value-creating investment. "
+
+            if profitability_index > 1.5:
+                interpretation += "High profitability index suggests strong returns. "
+            elif profitability_index > 1.2:
+                interpretation += "Good profitability index indicates solid returns. "
+            else:
+                interpretation += "Modest profitability index - acceptable but not exceptional. "
+
+        elif npv < 0:
+            interpretation = f"Negative NPV of ${npv:,.2f} indicates value-destroying investment. "
+            interpretation += "Project does not meet required return threshold. "
+        else:
+            interpretation = "NPV of zero indicates project meets exactly the required return rate. "
+
+        # Add risk considerations
+        if len(risk_factors.get("key_risks", [])) > 2:
+            interpretation += "Consider high risk factors in decision making."
+
+        return interpretation
 
     def _calculate_irr(self, numbers: list, question: str) -> Dict[str, Any]:
         """Simple IRR approximation."""
