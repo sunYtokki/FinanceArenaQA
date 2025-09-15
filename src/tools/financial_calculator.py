@@ -348,34 +348,281 @@ class FinancialCalculator(FinancialTool):
         return interpretation
 
     def _calculate_irr(self, numbers: list, question: str) -> Dict[str, Any]:
-        """Simple IRR approximation."""
+        """Enhanced IRR calculation with iterative solving and edge case handling."""
         if len(numbers) < 2:
             return {"error": "Need initial investment and cash flows for IRR"}
 
-        # Simplified IRR approximation
         initial_investment = abs(numbers[0])
         cash_flows = numbers[1:]
-        total_cash_flow = sum(cash_flows)
 
-        if len(cash_flows) > 0:
-            # Simple approximation: (Total cash flow / Initial investment) ^ (1/years) - 1
-            years = len(cash_flows)
-            irr_approx = ((total_cash_flow / initial_investment) ** (1/years)) - 1
+        # Validate cash flows
+        validation_result = self._validate_irr_inputs(initial_investment, cash_flows)
+        if validation_result.get("error"):
+            return validation_result
 
-            return {
-                "calculation": "IRR (approximation)",
-                "formula": "Approximate IRR calculation",
+        # Calculate IRR using Newton-Raphson method
+        irr_result = self._calculate_irr_newton_raphson(initial_investment, cash_flows)
+
+        # If Newton-Raphson fails, try bisection method
+        if irr_result.get("error") and "convergence" in irr_result.get("error", "").lower():
+            irr_result = self._calculate_irr_bisection(initial_investment, cash_flows)
+
+        # If both methods fail, provide fallback approximation
+        if irr_result.get("error"):
+            irr_result = self._calculate_irr_approximation(initial_investment, cash_flows)
+            irr_result["method"] = "approximation_fallback"
+            irr_result["warning"] = "Exact IRR calculation failed, using approximation"
+
+        # Add comprehensive analysis
+        if not irr_result.get("error"):
+            irr_percentage = irr_result["irr"]
+
+            # Calculate additional metrics
+            npv_at_irr = self._calculate_npv_at_rate(initial_investment, cash_flows, irr_percentage / 100)
+            sensitivity_analysis = self._perform_irr_sensitivity_analysis(initial_investment, cash_flows, irr_percentage)
+
+            irr_result.update({
+                "calculation": "Enhanced IRR Analysis",
+                "formula": "NPV = 0 = -Initial Investment + Σ(CFt / (1 + IRR)^t)",
                 "inputs": {
                     "initial_investment": initial_investment,
                     "cash_flows": cash_flows,
-                    "years": years
+                    "number_of_periods": len(cash_flows)
                 },
-                "result": irr_approx * 100,  # As percentage
-                "unit": "percentage",
-                "note": "This is a simplified approximation"
-            }
+                "npv_verification": npv_at_irr,
+                "sensitivity_analysis": sensitivity_analysis,
+                "interpretation": self._interpret_irr_result(irr_percentage, initial_investment, cash_flows),
+                "edge_case_analysis": self._analyze_irr_edge_cases(initial_investment, cash_flows)
+            })
 
-        return {"error": "Invalid cash flows for IRR calculation"}
+        return irr_result
+
+    def _validate_irr_inputs(self, initial_investment: float, cash_flows: list) -> Dict[str, Any]:
+        """Validate inputs for IRR calculation."""
+        if initial_investment <= 0:
+            return {"error": "Initial investment must be positive"}
+
+        if not cash_flows:
+            return {"error": "Cash flows cannot be empty"}
+
+        if all(cf <= 0 for cf in cash_flows):
+            return {"error": "All cash flows are non-positive - IRR undefined"}
+
+        # For IRR calculation, we expect some positive cash flows (normal investment pattern)
+        # Only flag as error if there are truly no positive cash flows
+        total_cash_flow = sum(cash_flows)
+        if total_cash_flow <= 0:
+            return {"error": "Total cash flows are negative - project likely unprofitable"}
+
+        return {"valid": True}
+
+    def _calculate_irr_newton_raphson(self, initial_investment: float, cash_flows: list, max_iterations: int = 100, tolerance: float = 1e-6) -> Dict[str, Any]:
+        """Calculate IRR using Newton-Raphson method."""
+        # Initial guess - use simple approximation
+        total_cf = sum(cash_flows)
+        years = len(cash_flows)
+        initial_guess = ((total_cf / initial_investment) ** (1/years)) - 1
+
+        # Ensure reasonable starting point
+        initial_guess = max(min(initial_guess, 10.0), -0.99)  # Clamp between -99% and 1000%
+
+        rate = initial_guess
+
+        for iteration in range(max_iterations):
+            # Calculate NPV and its derivative
+            npv = -initial_investment
+            npv_derivative = 0
+
+            for t, cf in enumerate(cash_flows, 1):
+                discount_factor = (1 + rate) ** t
+                npv += cf / discount_factor
+                npv_derivative -= t * cf / (discount_factor * (1 + rate))
+
+            # Check for convergence
+            if abs(npv) < tolerance:
+                return {
+                    "irr": rate * 100,  # Convert to percentage
+                    "iterations": iteration + 1,
+                    "method": "newton_raphson",
+                    "convergence_achieved": True,
+                    "final_npv": npv
+                }
+
+            # Newton-Raphson update
+            if abs(npv_derivative) < 1e-10:
+                return {"error": "Derivative too small - Newton-Raphson cannot converge"}
+
+            rate_new = rate - npv / npv_derivative
+
+            # Prevent rate from going too extreme
+            if rate_new < -0.99:
+                rate_new = -0.99
+            elif rate_new > 10.0:
+                rate_new = 10.0
+
+            rate = rate_new
+
+        return {"error": f"Newton-Raphson failed to converge after {max_iterations} iterations"}
+
+    def _calculate_irr_bisection(self, initial_investment: float, cash_flows: list, max_iterations: int = 100, tolerance: float = 1e-6) -> Dict[str, Any]:
+        """Calculate IRR using bisection method as fallback."""
+        # Find bounds where NPV changes sign
+        low_rate = -0.99  # -99%
+        high_rate = 10.0  # 1000%
+
+        low_npv = self._calculate_npv_at_rate(initial_investment, cash_flows, low_rate)
+        high_npv = self._calculate_npv_at_rate(initial_investment, cash_flows, high_rate)
+
+        # Check if bounds bracket a root
+        if low_npv * high_npv > 0:
+            # Try to find better bounds
+            for test_rate in [-0.5, 0, 0.5, 1.0, 2.0, 5.0]:
+                test_npv = self._calculate_npv_at_rate(initial_investment, cash_flows, test_rate)
+                if low_npv * test_npv < 0:
+                    high_rate = test_rate
+                    high_npv = test_npv
+                    break
+                elif test_npv * high_npv < 0:
+                    low_rate = test_rate
+                    low_npv = test_npv
+                    break
+            else:
+                return {"error": "Cannot find bounds that bracket IRR root"}
+
+        # Bisection method
+        for iteration in range(max_iterations):
+            mid_rate = (low_rate + high_rate) / 2
+            mid_npv = self._calculate_npv_at_rate(initial_investment, cash_flows, mid_rate)
+
+            if abs(mid_npv) < tolerance:
+                return {
+                    "irr": mid_rate * 100,  # Convert to percentage
+                    "iterations": iteration + 1,
+                    "method": "bisection",
+                    "convergence_achieved": True,
+                    "final_npv": mid_npv
+                }
+
+            if low_npv * mid_npv < 0:
+                high_rate = mid_rate
+                high_npv = mid_npv
+            else:
+                low_rate = mid_rate
+                low_npv = mid_npv
+
+        return {"error": f"Bisection method failed to converge after {max_iterations} iterations"}
+
+    def _calculate_irr_approximation(self, initial_investment: float, cash_flows: list) -> Dict[str, Any]:
+        """Fallback approximation method for IRR."""
+        total_cash_flow = sum(cash_flows)
+        years = len(cash_flows)
+
+        if years == 0:
+            return {"error": "No cash flows provided"}
+
+        # Simple approximation: (Total cash flow / Initial investment) ^ (1/years) - 1
+        irr_approx = ((total_cash_flow / initial_investment) ** (1/years)) - 1
+
+        return {
+            "irr": irr_approx * 100,
+            "method": "approximation",
+            "note": "This is a simplified approximation - actual IRR may differ"
+        }
+
+    def _calculate_npv_at_rate(self, initial_investment: float, cash_flows: list, rate: float) -> float:
+        """Calculate NPV at a specific discount rate."""
+        npv = -initial_investment
+        for t, cf in enumerate(cash_flows, 1):
+            npv += cf / ((1 + rate) ** t)
+        return npv
+
+    def _perform_irr_sensitivity_analysis(self, initial_investment: float, cash_flows: list, irr_percentage: float) -> Dict[str, Any]:
+        """Perform sensitivity analysis around the IRR."""
+        base_rate = irr_percentage / 100
+        sensitivity_rates = [
+            base_rate - 0.05,  # -5%
+            base_rate - 0.02,  # -2%
+            base_rate - 0.01,  # -1%
+            base_rate,         # Base
+            base_rate + 0.01,  # +1%
+            base_rate + 0.02,  # +2%
+            base_rate + 0.05   # +5%
+        ]
+
+        sensitivity_results = []
+        for rate in sensitivity_rates:
+            npv = self._calculate_npv_at_rate(initial_investment, cash_flows, rate)
+            sensitivity_results.append({
+                "rate_percentage": rate * 100,
+                "npv": npv,
+                "rate_difference": (rate - base_rate) * 100
+            })
+
+        return {
+            "sensitivity_table": sensitivity_results,
+            "rate_sensitivity": "High" if abs(sensitivity_results[0]["npv"]) > initial_investment * 0.1 else "Moderate"
+        }
+
+    def _interpret_irr_result(self, irr_percentage: float, initial_investment: float, cash_flows: list) -> str:
+        """Provide interpretation of IRR results."""
+        if irr_percentage > 20:
+            interpretation = f"High IRR of {irr_percentage:.2f}% indicates excellent returns. "
+        elif irr_percentage > 15:
+            interpretation = f"Good IRR of {irr_percentage:.2f}% indicates solid returns. "
+        elif irr_percentage > 10:
+            interpretation = f"Moderate IRR of {irr_percentage:.2f}% indicates acceptable returns. "
+        elif irr_percentage > 0:
+            interpretation = f"Low IRR of {irr_percentage:.2f}% indicates marginal returns. "
+        else:
+            interpretation = f"Negative IRR of {irr_percentage:.2f}% indicates the project destroys value. "
+
+        # Add context about typical hurdle rates
+        if irr_percentage > 12:
+            interpretation += "Exceeds typical corporate hurdle rates."
+        elif irr_percentage > 8:
+            interpretation += "May meet hurdle rate depending on risk profile."
+        else:
+            interpretation += "Likely below typical hurdle rate requirements."
+
+        return interpretation
+
+    def _analyze_irr_edge_cases(self, initial_investment: float, cash_flows: list) -> Dict[str, Any]:
+        """Analyze potential edge cases in IRR calculation."""
+        edge_cases = []
+
+        # Check for sign changes (multiple IRRs possible)
+        sign_changes = 0
+        for i in range(len(cash_flows)):
+            current_cf = cash_flows[i]
+            if i == 0:
+                prev_sign = -1 if initial_investment > 0 else 1  # Initial investment is negative cash flow
+            else:
+                prev_sign = 1 if cash_flows[i-1] > 0 else -1
+
+            current_sign = 1 if current_cf > 0 else -1
+            if prev_sign != current_sign:
+                sign_changes += 1
+
+        if sign_changes > 1:
+            edge_cases.append("Multiple sign changes detected - multiple IRRs may exist")
+
+        # Check for very large later cash flows
+        if len(cash_flows) > 1:
+            early_flows = cash_flows[:2]
+            later_flows = cash_flows[2:]
+            if later_flows and any(cf > max(early_flows) * 5 for cf in later_flows):
+                edge_cases.append("Large terminal cash flows may skew IRR calculation")
+
+        # Check for very small cash flows relative to investment
+        total_cf = sum(cash_flows)
+        if total_cf < initial_investment * 0.1:
+            edge_cases.append("Very small cash flows relative to investment")
+
+        return {
+            "potential_issues": edge_cases,
+            "sign_changes": sign_changes,
+            "multiple_irr_risk": "High" if sign_changes > 1 else "Low"
+        }
 
     def _general_calculation(self, numbers: list, question: str) -> Dict[str, Any]:
         """General calculation based on question context."""
