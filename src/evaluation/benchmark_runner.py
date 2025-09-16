@@ -17,11 +17,12 @@ import pandas as pd
 # Import shared utilities
 from .shared_evaluation_utils import (
     create_base_argument_parser, add_orchestrator_arguments,
-    setup_model_manager, setup_agent, setup_llm_scorer
+    setup_model_manager, setup_agent, setup_llm_scorer,
+    validate_evaluation_arguments, get_operation_mode
 )
 
 # Import evaluation components
-from .run_agent_evaluation import AgentRunner
+from .run_agent import AgentRunner
 from .run_llm_evaluation import LLMEvaluator
 
 
@@ -286,6 +287,110 @@ class BenchmarkOrchestrator:
 
         return final_results
 
+    def run_evaluation(self,
+                      agent,
+                      question_type: Optional[str] = None,
+                      num_samples: Optional[int] = None,
+                      split: str = "test",
+                      output_file: Optional[str] = None,
+                      verbose: bool = True) -> Dict[str, Any]:
+        """
+        Run evaluation with modern interface parameters.
+
+        Args:
+            agent: Agent to evaluate
+            question_type: Filter by question type
+            num_samples: Limit to N samples
+            split: Dataset split to use
+            output_file: Custom output filename
+            verbose: Show progress bars
+
+        Returns:
+            Complete evaluation results
+        """
+        # Determine operation mode and select appropriate method
+        operation_mode = get_operation_mode(question_type, num_samples)
+
+        if question_type and num_samples:
+            # Combined filtering: by type + sample limit
+            print(f"🚀 Starting evaluation for {num_samples} {question_type} questions from {split} split...")
+
+            # Use by_question_type method then limit samples
+            agent_runner = AgentRunner(self.dataset_path)
+
+            # Load and filter by type first
+            from .shared_evaluation_utils import load_dataset
+            all_examples = load_dataset(str(self.dataset_path), split)
+            examples = [ex for ex in all_examples if ex.question_type == question_type]
+
+            if not examples:
+                print(f"No examples found for question type: {question_type}")
+                return {}
+
+            # Then apply sample limit
+            examples = examples[:num_samples]
+            print(f"Processing {len(examples)} examples")
+
+            # Generate temporary filename for agent results
+            timestamp = pd.Timestamp.now().strftime("%Y%m%d_%H%M%S")
+            temp_agent_file = f"temp_agent_results_{question_type}_{num_samples}_{timestamp}.json"
+
+            # Run agent on filtered examples
+            agent_results = agent_runner.run_agent_on_dataset(
+                agent=agent,
+                examples=examples,
+                verbose=verbose
+            )
+
+            # Save temporary results
+            from .shared_evaluation_utils import save_results
+            temp_path = self.output_dir / temp_agent_file
+            save_results(agent_results, str(temp_path))
+
+            # Continue with LLM evaluation if requested
+            final_results = agent_results
+            if self.use_llm_evaluation:
+                print("\n🧠 STEP 2: Running LLM Evaluation")
+                print("-" * 50)
+                final_results = self._run_llm_evaluation_step(str(temp_path), verbose)
+                temp_path.unlink()  # Clean up
+
+            # Generate final output filename
+            if output_file is None:
+                eval_type = "llm_evaluated" if self.use_llm_evaluation else "agent_only"
+                output_file = f"financeqa_{question_type}_{num_samples}_{eval_type}_{timestamp}.json"
+
+        elif question_type:
+            # Filter by question type only
+            final_results = self.run_by_question_type(
+                agent=agent,
+                question_type=question_type,
+                split=split,
+                output_file=output_file,
+                verbose=verbose
+            )
+
+        elif num_samples:
+            # Limit samples only
+            final_results = self.run_quick_evaluation(
+                agent=agent,
+                split=split,
+                num_samples=num_samples,
+                output_file=output_file,
+                verbose=verbose
+            )
+
+        else:
+            # Full dataset
+            final_results = self.run_full_evaluation(
+                agent=agent,
+                split=split,
+                output_file=output_file,
+                verbose=verbose
+            )
+
+        return final_results
+
     def _run_llm_evaluation_step(self, agent_result_file: str, verbose: bool) -> Dict[str, Any]:
         """
         Run LLM evaluation on agent results.
@@ -363,6 +468,9 @@ def main():
     args = parser.parse_args()
 
     try:
+        # Validate arguments
+        validate_evaluation_arguments(args)
+
         # Setup model manager and agent
         print("🔧 Setting up model manager...")
         model_manager, config = setup_model_manager()
@@ -397,32 +505,15 @@ def main():
     verbose = not args.no_verbose
 
     try:
-        if args.evaluation_type == "full":
-            orchestrator.run_full_evaluation(
-                agent=agent,
-                split=args.split,
-                output_file=args.output_file,
-                verbose=verbose
-            )
-        elif args.evaluation_type == "quick":
-            orchestrator.run_quick_evaluation(
-                agent=agent,
-                split=args.split,
-                num_samples=args.num_samples,
-                output_file=args.output_file,
-                verbose=verbose
-            )
-        elif args.evaluation_type == "by-type":
-            if not args.question_type:
-                print("--question-type is required for by-type evaluation")
-                sys.exit(1)
-            orchestrator.run_by_question_type(
-                agent=agent,
-                question_type=args.question_type,
-                split=args.split,
-                output_file=args.output_file,
-                verbose=verbose
-            )
+        # Use modern unified evaluation interface
+        orchestrator.run_evaluation(
+            agent=agent,
+            question_type=getattr(args, 'question_type', None),
+            num_samples=getattr(args, 'num_samples', None),
+            split=args.split,
+            output_file=args.output_file,
+            verbose=verbose
+        )
 
     except FileNotFoundError as e:
         print(f"Error: {e}")

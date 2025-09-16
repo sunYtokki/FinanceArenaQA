@@ -237,13 +237,11 @@ def add_agent_evaluation_arguments(parser: argparse.ArgumentParser) -> argparse.
     Returns:
         Parser with agent evaluation arguments added
     """
-    parser.add_argument("--evaluation-type", default="quick",
-                        choices=["full", "quick", "by-type"],
-                        help="Type of evaluation to run")
-    parser.add_argument("--num-samples", type=int, default=50,
-                        help="Number of samples for quick evaluation")
-    parser.add_argument("--question-type",
-                        help="Question type filter for by-type evaluation")
+    # Modern primary arguments
+    parser.add_argument("--question-type", type=str,
+                        help="Filter dataset by question type (e.g., 'calculation', 'conceptual')")
+    parser.add_argument("--num-samples", type=int,
+                        help="Limit processing to N samples (default: process all available)")
 
     return parser
 
@@ -288,6 +286,44 @@ def add_orchestrator_arguments(parser: argparse.ArgumentParser) -> argparse.Argu
                         help="Model to use for LLM evaluation (if different from agent model)")
 
     return parser
+
+
+def validate_evaluation_arguments(args) -> None:
+    """
+    Validate evaluation arguments for consistency.
+
+    Args:
+        args: Parsed command line arguments
+
+    Raises:
+        ValueError: If arguments are invalid
+    """
+    if hasattr(args, 'num_samples') and args.num_samples and args.num_samples <= 0:
+        raise ValueError("--num-samples must be positive")
+
+    if hasattr(args, 'question_type') and args.question_type and not args.question_type.strip():
+        raise ValueError("--question-type cannot be empty")
+
+
+def get_operation_mode(question_type: Optional[str] = None, num_samples: Optional[int] = None) -> str:
+    """
+    Generate descriptive operation mode string based on parameters.
+
+    Args:
+        question_type: Question type filter
+        num_samples: Number of samples to process
+
+    Returns:
+        Operation mode description string
+    """
+    if question_type and num_samples:
+        return f"BY_TYPE_{question_type}_SAMPLE_{num_samples}"
+    elif question_type:
+        return f"BY_TYPE_{question_type}"
+    elif num_samples:
+        return f"SAMPLE_{num_samples}"
+    else:
+        return "FULL"
 
 
 def setup_model_manager(config_path: str = "config/model_config.json"):

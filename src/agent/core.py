@@ -187,8 +187,8 @@ class Agent:
 
         try:
             # Step 1: Analyze and decompose the question
-            analysis_step = await self._safe_execute_step(self._analyze_question, question, chain)
-            chain.add_step(analysis_step)
+            # analysis_step = await self._safe_execute_step(self._analyze_question, question, chain)
+            # chain.add_step(analysis_step)
 
             # Check max steps limit
             # if len(chain.steps) >= self.max_steps:
@@ -196,8 +196,8 @@ class Agent:
             #     return chain
 
             # Step 2: Generate reasoning plan
-            plan_step = await self._safe_execute_step(self._generate_reasoning_plan, chain)
-            chain.add_step(plan_step)
+            # plan_step = await self._safe_execute_step(self._generate_reasoning_plan, chain)
+            # chain.add_step(plan_step)
 
             # Check max steps limit
             # if len(chain.steps) >= self.max_steps:
@@ -205,7 +205,7 @@ class Agent:
             #     return chain
 
             # Step 3: Execute reasoning steps
-            await self._execute_reasoning_plan(chain)
+            # await self._execute_reasoning_plan(chain)
 
             # Check max steps limit
             # if len(chain.steps) >= self.max_steps:
@@ -980,25 +980,8 @@ class Agent:
                     
                     
             synthesis_prompt = f"""
-            Based on all the reasoning steps, provide a final answer to the question.
-            Final answer format rules:
-            1. If numeric:
-            - For currency: prefix with "$", include commas, round to 2 decimals if needed,
-                and add scale notes if provided (e.g., "in millions").
-            - For percentages: include "%" with two decimal places.
-            2. If comparison/boolean: answer only "Yes" or "No".
-            3. If conceptual impact: answer only with a short phrase
-            (e.g., "No change", "Increase", "Decrease").
-            4. Do NOT include reasoning, context, or extra words. Only answer the Original Question.
-
-            Original Question: {chain.question}
-            Reasoning Context:
-            {context}
-            """
-
-            synthesis_prompt_ver1 = f"""
-            Based on all the reasoning steps, provide a final answer to the question.
-            Original Question: {chain.question}
+            Based on all the original and reasoning context, provide a final answer to the original question.
+            {chain.question}
             Reasoning Context:
             {context}
             Provide a clear, concise final answer.

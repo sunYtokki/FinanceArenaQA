@@ -129,35 +129,47 @@ python scripts/test_e2e.py
 
 ### FinanceQA Benchmark Evaluation
 
-Evaluate agent performance on the FinanceQA benchmark:
+Evaluate agent performance on the FinanceQA benchmark using the modern CLI interface:
 
 ```bash
 # Download FinanceQA dataset (if not already done)
 python scripts/download_financeqa.py
 
-# Full dataset evaluation (all examples)
+# Full dataset evaluation (all examples) - Default behavior
 python src/evaluation/benchmark_runner.py \
-    --evaluation-type full \
     --dataset-path data/datasets/financeqa \
     --output-dir results/
 
 # Quick evaluation (50 samples for testing)
 python src/evaluation/benchmark_runner.py \
-    --evaluation-type quick \
     --num-samples 50 \
     --dataset-path data/datasets/financeqa \
     --output-dir results/
 
 # Evaluate specific question types
 python src/evaluation/benchmark_runner.py \
-    --evaluation-type by-type \
     --question-type "calculation" \
+    --dataset-path data/datasets/financeqa \
+    --output-dir results/
+
+# Combined: 20 calculation questions for targeted testing
+python src/evaluation/benchmark_runner.py \
+    --question-type "calculation" \
+    --num-samples 20 \
+    --dataset-path data/datasets/financeqa \
+    --output-dir results/
+
+# With LLM-based evaluation for improved accuracy assessment
+python src/evaluation/benchmark_runner.py \
+    --question-type "conceptual" \
+    --num-samples 25 \
+    --use-llm-evaluation \
     --dataset-path data/datasets/financeqa \
     --output-dir results/
 
 # View results
 ls results/
-cat results/financeqa_full_evaluation_test_*.json
+cat results/financeqa_*_evaluation_*.json
 ```
 
 ## Model Performance Evaluation
@@ -184,40 +196,52 @@ The agent tracks multiple performance indicators:
 ### Running Performance Tests
 
 ```python
-from src.evaluation.benchmark_runner import BenchmarkRunner
+from src.evaluation.benchmark_runner import BenchmarkOrchestrator
 
-# Initialize benchmark runner with custom dataset path
-runner = BenchmarkRunner(
+# Initialize benchmark orchestrator with custom dataset path
+orchestrator = BenchmarkOrchestrator(
     dataset_path="data/datasets/financeqa",
-    output_dir="results/"
+    output_dir="results/",
+    use_llm_evaluation=True  # Enable LLM-based evaluation
 )
 
-# Run full evaluation on test split (all examples)
-results = runner.run_full_evaluation(
+# Run evaluation with modern interface - Full dataset (default)
+results = orchestrator.run_evaluation(
     agent=your_agent,
     split="test",
     verbose=True
 )
 
-# Run quick evaluation for development testing
-results = runner.run_quick_evaluation(
+# Run evaluation with sample limit for development testing
+results = orchestrator.run_evaluation(
     agent=your_agent,
-    split="test",
     num_samples=100,
+    split="test",
     verbose=True
 )
 
 # Evaluate specific question types
-results = runner.run_by_question_type(
+results = orchestrator.run_evaluation(
     agent=your_agent,
     question_type="calculation",
-    split="test"
+    split="test",
+    verbose=True
+)
+
+# Combined: Limited samples of specific question type
+results = orchestrator.run_evaluation(
+    agent=your_agent,
+    question_type="conceptual",
+    num_samples=50,
+    split="test",
+    verbose=True
 )
 
 # Print performance summary
 metrics = results['metrics']
-print(f"Exact Match Accuracy: {metrics['exact_match_accuracy']:.1%}")
-print(f"Normalized Match Accuracy: {metrics['normalized_match_accuracy']:.1%}")
+if 'llm_match_accuracy' in metrics:
+    print(f"LLM Match Accuracy: {metrics['llm_match_accuracy']:.1%}")
+    print(f"LLM Matches: {metrics['llm_matches']}")
 print(f"Error Rate: {metrics['error_rate']:.1%}")
 print(f"Total Examples: {metrics['total_examples']}")
 ```
@@ -430,34 +454,50 @@ for step in failed_steps:
 
 ## Performance Benchmarks
 
-Run comprehensive benchmarks:
+Run comprehensive benchmarks with the modern CLI interface:
 
 ```bash
-# Full FinanceQA evaluation (takes ~30 minutes)
+# Full FinanceQA evaluation (takes ~30 minutes) - Default behavior
 python src/evaluation/benchmark_runner.py \
-    --evaluation-type full \
     --dataset-path data/datasets/financeqa \
     --output-dir results/
 
 # Quick evaluation (5 minutes)
 python src/evaluation/benchmark_runner.py \
-    --evaluation-type quick \
     --num-samples 50 \
     --dataset-path data/datasets/financeqa \
     --output-dir results/
 
 # Evaluate by question type
 python src/evaluation/benchmark_runner.py \
-    --evaluation-type by-type \
     --question-type "calculation" \
     --dataset-path data/datasets/financeqa \
     --output-dir results/
 
 # Performance profiling with different splits
 python src/evaluation/benchmark_runner.py \
-    --evaluation-type full \
     --split validation \
     --dataset-path data/datasets/financeqa \
+    --output-dir results/
+
+# Advanced: Targeted evaluation with LLM scoring
+python src/evaluation/benchmark_runner.py \
+    --question-type "conceptual" \
+    --num-samples 100 \
+    --use-llm-evaluation \
+    --split validation \
+    --dataset-path data/datasets/financeqa \
+    --output-dir results/
+
+# Run separate agent evaluation and LLM evaluation steps
+python src/evaluation/run_agent.py \
+    --question-type "calculation" \
+    --num-samples 25 \
+    --dataset-path data/datasets/financeqa \
+    --output-dir results/
+
+python src/evaluation/run_llm_evaluation.py \
+    --result-file results/financeqa_agent_results_calculation_25_*.json \
     --output-dir results/
 ```
 

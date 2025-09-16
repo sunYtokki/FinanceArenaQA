@@ -23,7 +23,7 @@ from .shared_evaluation_utils import (
     EvaluationExample, AgentResponse, EvaluationResult, FinancialAgent,
     load_dataset, save_results,
     create_base_argument_parser, add_agent_evaluation_arguments,
-    setup_model_manager, setup_agent
+    setup_model_manager, setup_agent, validate_evaluation_arguments
 )
 
 
@@ -98,7 +98,7 @@ class AgentRunner:
         for example in iterator:
             try:
                 # Combine context and question
-                full_question = f"Original Question: {example.question} \n Context: {example.context}\n" if example.context else example.question
+                full_question = f"Original Question: {example.question} \n Original Context: {example.context}\n" if example.context else example.question
 
                 # Time the agent response
                 start_time = time.time()
@@ -317,6 +317,94 @@ class AgentRunner:
 
         return results
 
+    def run_evaluation(self,
+                      agent: FinancialAgent,
+                      question_type: Optional[str] = None,
+                      num_samples: Optional[int] = None,
+                      split: str = "test",
+                      output_file: Optional[str] = None,
+                      verbose: bool = True) -> Dict[str, Any]:
+        """
+        Run agent evaluation with modern interface parameters.
+
+        Args:
+            agent: Agent to run
+            question_type: Filter by question type
+            num_samples: Limit to N samples
+            split: Dataset split to use
+            output_file: Custom output filename
+            verbose: Show progress bars
+
+        Returns:
+            Agent results
+        """
+        if question_type and num_samples:
+            # Combined filtering: by type + sample limit
+            print(f"Running agent on {num_samples} {question_type} questions from {split} split...")
+
+            # Load and filter examples
+            all_examples = load_dataset(str(self.dataset_path), split)
+            examples = [ex for ex in all_examples if ex.question_type == question_type]
+
+            if not examples:
+                print(f"No examples found for question type: {question_type}")
+                return {}
+
+            # Apply sample limit
+            examples = examples[:num_samples]
+            print(f"Processing {len(examples)} examples")
+
+            # Run agent
+            results = self.run_agent_on_dataset(
+                agent=agent,
+                examples=examples,
+                verbose=verbose
+            )
+
+            # Generate output filename
+            if output_file is None:
+                timestamp = pd.Timestamp.now().strftime("%Y%m%d_%H%M%S")
+                output_file = f"financeqa_agent_results_{question_type}_{num_samples}_{timestamp}.json"
+
+            # Save results
+            output_path = Path("results") / output_file
+            output_path.parent.mkdir(exist_ok=True)
+            save_results(results, str(output_path))
+
+            # Print summary
+            self._print_summary(results, split, f"{question_type.upper()} ({num_samples} samples)")
+
+        elif question_type:
+            # Filter by question type only
+            results = self.run_by_type(
+                agent=agent,
+                question_type=question_type,
+                split=split,
+                output_file=output_file,
+                verbose=verbose
+            )
+
+        elif num_samples:
+            # Limit samples only
+            results = self.run_quick(
+                agent=agent,
+                split=split,
+                num_samples=num_samples,
+                output_file=output_file,
+                verbose=verbose
+            )
+
+        else:
+            # Full dataset
+            results = self.run_full(
+                agent=agent,
+                split=split,
+                output_file=output_file,
+                verbose=verbose
+            )
+
+        return results
+
     def _print_summary(self, results: Dict[str, Any], split: str, run_type: str):
         """Print run summary."""
         metrics = results['metrics']
@@ -340,6 +428,9 @@ def main():
     args = parser.parse_args()
 
     try:
+        # Validate arguments
+        validate_evaluation_arguments(args)
+
         # Setup model manager and agent
         print("🔧 Setting up model manager...")
         model_manager, config = setup_model_manager()
@@ -358,32 +449,15 @@ def main():
     verbose = not args.no_verbose
 
     try:
-        if args.evaluation_type == "full":
-            runner.run_full(
-                agent=agent,
-                split=args.split,
-                output_file=args.output_file,
-                verbose=verbose
-            )
-        elif args.evaluation_type == "quick":
-            runner.run_quick(
-                agent=agent,
-                split=args.split,
-                num_samples=args.num_samples,
-                output_file=args.output_file,
-                verbose=verbose
-            )
-        elif args.evaluation_type == "by-type":
-            if not args.question_type:
-                print("--question-type is required for by-type evaluation")
-                sys.exit(1)
-            runner.run_by_type(
-                agent=agent,
-                question_type=args.question_type,
-                split=args.split,
-                output_file=args.output_file,
-                verbose=verbose
-            )
+        # Use modern unified evaluation interface
+        runner.run_evaluation(
+            agent=agent,
+            question_type=getattr(args, 'question_type', None),
+            num_samples=getattr(args, 'num_samples', None),
+            split=args.split,
+            output_file=args.output_file,
+            verbose=verbose
+        )
 
     except FileNotFoundError as e:
         print(f"Error: {e}")
