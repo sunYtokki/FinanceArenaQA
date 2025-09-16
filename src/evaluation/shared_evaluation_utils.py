@@ -391,7 +391,7 @@ def setup_llm_scorer(model_manager, evaluation_model: Optional[str] = None, conf
             if eval_config.get('base_url'):
                 print(f"   Base URL: {eval_config['base_url']}")
 
-        scorer = LLMScorer(model_manager, model_name=eval_model)
+        scorer = LLMScorer(model_manager, model_name=eval_model, config=config)
         return scorer
 
     except Exception as e:

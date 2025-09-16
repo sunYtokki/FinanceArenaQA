@@ -113,7 +113,7 @@ class BenchmarkOrchestrator:
         if self.use_llm_evaluation and 'save_evaluated_results' in dir(LLMEvaluator):
             # Use LLMEvaluator's save method if available
             model_manager, _ = setup_model_manager()
-            evaluator = LLMEvaluator(model_manager, self.evaluation_model)
+            evaluator = LLMEvaluator(model_manager, self.evaluation_model, config)
             evaluator.save_evaluated_results(final_results, str(final_output_path))
         else:
             # Use shared utilities save method
@@ -192,7 +192,7 @@ class BenchmarkOrchestrator:
         # Save results
         if self.use_llm_evaluation:
             model_manager, _ = setup_model_manager()
-            evaluator = LLMEvaluator(model_manager, self.evaluation_model)
+            evaluator = LLMEvaluator(model_manager, self.evaluation_model, config)
             evaluator.save_evaluated_results(final_results, str(final_output_path))
         else:
             from .shared_evaluation_utils import save_results
@@ -275,7 +275,7 @@ class BenchmarkOrchestrator:
         # Save results
         if self.use_llm_evaluation:
             model_manager, _ = setup_model_manager()
-            evaluator = LLMEvaluator(model_manager, self.evaluation_model)
+            evaluator = LLMEvaluator(model_manager, self.evaluation_model, config)
             evaluator.save_evaluated_results(final_results, str(final_output_path))
         else:
             from .shared_evaluation_utils import save_results
@@ -306,7 +306,7 @@ class BenchmarkOrchestrator:
             if not eval_model and 'evaluation' in config:
                 eval_model = config['evaluation'].get('model_name')
 
-            evaluator = LLMEvaluator(model_manager, eval_model)
+            evaluator = LLMEvaluator(model_manager, eval_model, config)
 
             # Run LLM evaluation
             llm_results = evaluator.evaluate_result_file(

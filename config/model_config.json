@@ -14,9 +14,10 @@
   "evaluation": {
       "provider": "ollama",
       "model_name": "deepseek-r1:latest",
-      "base_url": "http://localhost:11435",
+      "base_url": "http://localhost:11434",
       "temperature": 0.1,
       "max_ctx": 12000,
-      "max_predict": 1024
+      "max_predict": 2048,
+      "timeout": 120
   }
 }

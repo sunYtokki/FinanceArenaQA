@@ -26,15 +26,16 @@ from .shared_evaluation_utils import (
 class LLMEvaluator:
     """LLM-based evaluator for agent result files."""
 
-    def __init__(self, model_manager, evaluation_model: Optional[str] = None):
+    def __init__(self, model_manager, evaluation_model: Optional[str] = None, config: Optional[Dict[str, Any]] = None):
         """
         Initialize the LLM evaluator.
 
         Args:
             model_manager: Model manager for LLM evaluation
             evaluation_model: Specific model to use for evaluation (optional)
+            config: Configuration dictionary with evaluation settings (optional)
         """
-        self.scorer = setup_llm_scorer(model_manager, evaluation_model)
+        self.scorer = setup_llm_scorer(model_manager, evaluation_model, config)
 
     def evaluate_result_file(
         self,
@@ -265,7 +266,7 @@ def main():
             eval_model = eval_config.get('model_name')
             print(f"📊 Using evaluation config: {eval_config.get('provider')} / {eval_model}")
 
-        evaluator = LLMEvaluator(model_manager, eval_model)
+        evaluator = LLMEvaluator(model_manager, eval_model, config)
         print("✅ LLM evaluator setup complete")
 
     except Exception as e:

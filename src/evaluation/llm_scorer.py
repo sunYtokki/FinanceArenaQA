@@ -29,16 +29,40 @@ class LLMEvaluationResult:
 class LLMScorer:
     """LLM-based scorer for financial QA evaluation."""
 
-    def __init__(self, model_manager: ModelManager, model_name: Optional[str] = None):
+    def __init__(self, model_manager: ModelManager, model_name: Optional[str] = None, config: Optional[Dict[str, Any]] = None):
         """
         Initialize the LLM scorer.
 
         Args:
             model_manager: Model manager for LLM inference
             model_name: Specific model to use for evaluation (if None, uses default)
+            config: Configuration dictionary with evaluation settings
         """
         self.model_manager = model_manager
         self.model_name = model_name
+        self.config = config
+
+        # Extract evaluation-specific parameters from config
+        self.eval_config = {}
+        if config and 'evaluation' in config:
+            eval_section = config['evaluation']
+            self.eval_config = {
+                'temperature': eval_section.get('temperature', 0.1),
+                'max_ctx': eval_section.get('max_ctx', 12000),
+                'max_predict': eval_section.get('max_predict', 2048),
+                'timeout': eval_section.get('timeout', 30)
+            }
+            # Use evaluation model if not explicitly provided
+            if not self.model_name:
+                self.model_name = eval_section.get('model_name')
+        else:
+            # Default evaluation parameters
+            self.eval_config = {
+                'temperature': 0.1,
+                'max_ctx': 12000,
+                'max_predict': 2048,
+                'timeout': 30
+            }
 
         # Financial evaluation prompt template
         self.evaluation_prompt = """You are an expert financial analyst evaluating the correctness of financial answers.
@@ -168,12 +192,13 @@ Response:"""
                 predicted=predicted.strip()
             )
 
-            # Get LLM response using the correct async method
+            # Get LLM response using the correct async method with config parameters
             response = await self.model_manager.generate(
                 prompt=prompt,
                 provider_name=None,  # Use default provider
-                temperature=0.1,
-                max_tokens=512
+                temperature=self.eval_config['temperature'],
+                num_ctx=self.eval_config['max_ctx'],
+                num_predict=self.eval_config['max_predict']
             )
 
             processing_time = time.time() - start_time
