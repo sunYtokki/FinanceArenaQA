@@ -112,7 +112,7 @@ class BenchmarkOrchestrator:
         # Save results using the appropriate format
         if self.use_llm_evaluation and 'save_evaluated_results' in dir(LLMEvaluator):
             # Use LLMEvaluator's save method if available
-            model_manager, _ = setup_model_manager()
+            model_manager, config = setup_model_manager()
             evaluator = LLMEvaluator(model_manager, self.evaluation_model, config)
             evaluator.save_evaluated_results(final_results, str(final_output_path))
         else:
@@ -191,7 +191,7 @@ class BenchmarkOrchestrator:
 
         # Save results
         if self.use_llm_evaluation:
-            model_manager, _ = setup_model_manager()
+            model_manager, config = setup_model_manager()
             evaluator = LLMEvaluator(model_manager, self.evaluation_model, config)
             evaluator.save_evaluated_results(final_results, str(final_output_path))
         else:
@@ -274,7 +274,7 @@ class BenchmarkOrchestrator:
 
         # Save results
         if self.use_llm_evaluation:
-            model_manager, _ = setup_model_manager()
+            model_manager, config = setup_model_manager()
             evaluator = LLMEvaluator(model_manager, self.evaluation_model, config)
             evaluator.save_evaluated_results(final_results, str(final_output_path))
         else:
