@@ -138,7 +138,6 @@ data/processed/
 data/cache/
 
 # Model files and outputs
-models/
 *.pkl
 *.joblib
 *.h5

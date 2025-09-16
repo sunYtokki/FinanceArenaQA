@@ -102,8 +102,8 @@
 ### PHASE 2: ACCURACY IMPROVEMENTS
 
 #### 9.0 Enhanced Financial Calculations
-- [ ] 4.2 Implement NPV calculator with cash flow analysis and assumptions tracking
-- [ ] 4.3 Implement IRR calculator with iterative solving and edge case handling
+- [x] 4.2 Implement NPV calculator with cash flow analysis and assumptions tracking
+- [x] 4.3 Implement IRR calculator with iterative solving and edge case handling
 - [ ] 4.7 Implement calculation step documentation and intermediate result tracking
 
 #### 10.0 Advanced Document Processing
