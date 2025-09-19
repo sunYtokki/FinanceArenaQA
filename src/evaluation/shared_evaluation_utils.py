@@ -372,7 +372,7 @@ def setup_agent(model_manager, config: Dict[str, Any]):
         Exception: If agent setup fails
     """
     try:
-        from src.agent.core import Agent
+        from src.agent.core_deprecated import Agent
         from src.tools.financial_calculator import FinancialCalculator
 
         # Create tools
