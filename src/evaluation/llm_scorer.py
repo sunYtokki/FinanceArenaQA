@@ -90,15 +90,14 @@ Ground Truth Answer: {ground_truth}
 Predicted Answer: {predicted}
 
 Evaluate whether the predicted answer is correct compared to the ground truth.
-Provide your response in the following JSON format:
+
+IMPORTANT: Respond with ONLY a valid JSON object. Do not include any additional text, explanations, or formatting outside the JSON.
 
 {{
   "is_correct": true/false,
   "reasoning": "Detailed explanation of your evaluation decision",
   "confidence": 0.95
-}}
-
-Response:"""
+}}"""
 
     def compute_llm_match(self, predicted: str, ground_truth: str, question: str = "") -> bool:
         """
@@ -318,15 +317,43 @@ Response:"""
             # Try to find JSON in the response
             response = response.strip()
 
-            # Look for JSON block
-            start_idx = response.find('{')
-            end_idx = response.rfind('}') + 1
+            # Look for JSON block - handle nested braces properly
+            brace_count = 0
+            start_idx = -1
+            end_idx = -1
 
-            if start_idx == -1 or end_idx == 0:
-                raise ValueError("No JSON found in response")
+            for i, char in enumerate(response):
+                if char == '{':
+                    if start_idx == -1:
+                        start_idx = i
+                    brace_count += 1
+                elif char == '}':
+                    brace_count -= 1
+                    if brace_count == 0 and start_idx != -1:
+                        end_idx = i + 1
+                        break
+
+            if start_idx == -1 or end_idx == -1:
+                raise ValueError("No complete JSON object found in response")
 
             json_str = response[start_idx:end_idx]
-            data = json.loads(json_str)
+
+            # Try to parse the JSON
+            try:
+                data = json.loads(json_str)
+            except json.JSONDecodeError as e:
+                # If parsing fails, try to clean up common issues
+                # Remove any trailing commas before closing braces/brackets
+                cleaned_json = json_str
+                import re
+                cleaned_json = re.sub(r',\s*([}\]])', r'\1', cleaned_json)
+
+                # Try parsing the cleaned version
+                try:
+                    data = json.loads(cleaned_json)
+                except json.JSONDecodeError:
+                    # If still failing, raise the original error with more context
+                    raise ValueError(f"Failed to parse JSON even after cleaning. Original error: {e}. JSON content: {json_str[:200]}...")
 
             # Validate required fields
             if "is_correct" not in data:
@@ -341,32 +368,6 @@ Response:"""
 
             return data
 
-        except (json.JSONDecodeError, ValueError, KeyError) as e:
+        except Exception as e:
             raise ValueError(f"Failed to parse LLM response: {e}")
 
-    def compute_exact_match(self, predicted: str, ground_truth: str) -> bool:
-        """
-        Backward compatibility method for exact match computation.
-
-        Args:
-            predicted: Agent's predicted answer
-            ground_truth: Ground truth answer
-
-        Returns:
-            True if exact match, False otherwise
-        """
-        return predicted.strip() == ground_truth.strip()
-
-    def compute_normalized_match(self, predicted: str, ground_truth: str) -> bool:
-        """
-        Backward compatibility method for normalized match computation.
-        Uses LLM evaluation by default.
-
-        Args:
-            predicted: Agent's predicted answer
-            ground_truth: Ground truth answer
-
-        Returns:
-            True if normalized match, False otherwise
-        """
-        return self.compute_llm_match(predicted, ground_truth)

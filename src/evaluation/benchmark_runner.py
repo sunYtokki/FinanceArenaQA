@@ -315,50 +315,66 @@ class BenchmarkOrchestrator:
             # Combined filtering: by type + sample limit
             print(f"🚀 Starting evaluation for {num_samples} {question_type} questions from {split} split...")
 
-            # Use by_question_type method then limit samples
+            # Step 1: Run agent evaluation using AgentRunner
+            print("\n📋 STEP 1: Running Agent Evaluation")
+            print("-" * 50)
+
             agent_runner = AgentRunner(self.dataset_path)
-
-            # Load and filter by type first
-            from .shared_evaluation_utils import load_dataset
-            all_examples = load_dataset(str(self.dataset_path), split)
-            examples = [ex for ex in all_examples if ex.question_type == question_type]
-
-            if not examples:
-                print(f"No examples found for question type: {question_type}")
-                return {}
-
-            # Then apply sample limit
-            examples = examples[:num_samples]
-            print(f"Processing {len(examples)} examples")
 
             # Generate temporary filename for agent results
             timestamp = pd.Timestamp.now().strftime("%Y%m%d_%H%M%S")
             temp_agent_file = f"temp_agent_results_{question_type}_{num_samples}_{timestamp}.json"
 
-            # Run agent on filtered examples
-            agent_results = agent_runner.run_agent_on_dataset(
+            # Use AgentRunner's run_evaluation method for combined filtering
+            agent_results = agent_runner.run_evaluation(
                 agent=agent,
-                examples=examples,
+                question_type=question_type,
+                num_samples=num_samples,
+                split=split,
+                output_file=temp_agent_file,
                 verbose=verbose
             )
 
-            # Save temporary results
-            from .shared_evaluation_utils import save_results
-            temp_path = self.output_dir / temp_agent_file
-            save_results(agent_results, str(temp_path))
+            if not agent_results:
+                print(f"No examples found for question type: {question_type}")
+                return {}
 
-            # Continue with LLM evaluation if requested
+            # Step 2: Run LLM evaluation if requested
             final_results = agent_results
             if self.use_llm_evaluation:
                 print("\n🧠 STEP 2: Running LLM Evaluation")
                 print("-" * 50)
-                final_results = self._run_llm_evaluation_step(str(temp_path), verbose)
-                temp_path.unlink()  # Clean up
 
-            # Generate final output filename
+                final_results = self._run_llm_evaluation_step(
+                    agent_result_file=str(self.output_dir / temp_agent_file),
+                    verbose=verbose
+                )
+
+                # Clean up temporary agent file
+                temp_file_path = self.output_dir / temp_agent_file
+                if temp_file_path.exists():
+                    temp_file_path.unlink()
+            else:
+                print("\n⏭️  STEP 2: Skipping LLM Evaluation (--use-llm-evaluation not specified)")
+
+            # Step 3: Save final results with proper filename
             if output_file is None:
                 eval_type = "llm_evaluated" if self.use_llm_evaluation else "agent_only"
                 output_file = f"financeqa_{question_type}_{num_samples}_{eval_type}_{timestamp}.json"
+
+            final_output_path = self.output_dir / output_file
+
+            # Save results using the appropriate format
+            if self.use_llm_evaluation:
+                model_manager, config = setup_model_manager()
+                evaluator = LLMEvaluator(model_manager, self.evaluation_model, config)
+                evaluator.save_evaluated_results(final_results, str(final_output_path))
+            else:
+                from .shared_evaluation_utils import save_results
+                save_results(final_results, str(final_output_path))
+
+            # Print final summary
+            self._print_final_summary(final_results, split, f"{question_type.upper()} ({num_samples} samples)", self.use_llm_evaluation)
 
         elif question_type:
             # Filter by question type only

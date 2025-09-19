@@ -980,11 +980,22 @@ class Agent:
                     
                     
             synthesis_prompt = f"""
-            Based on all the original and reasoning context, provide a final answer to the original question.
+            You are a financial reasoning agent. Based on all the original and reasoning context, 
+            provide the final answer to the question in the required format.
+
+            Question:
             {chain.question}
+
             Reasoning Context:
             {context}
-            Provide a clear, concise final answer.
+
+            Instructions:
+            1. Show your reasoning briefly (if necessary).
+            2. Always end with the exact final answer on a new line, 
+            starting with '<answer>:' and nothing else before it.
+            3. The final answer must be concise, in the correct financial format 
+
+            Now, provide your response.
             """
 
             response = await self.model_manager.generate(synthesis_prompt)
