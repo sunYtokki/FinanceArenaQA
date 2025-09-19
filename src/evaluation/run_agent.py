@@ -54,15 +54,18 @@ class AgentRunner:
         if inspect.iscoroutinefunction(agent.answer_question):
             # Agent is async, run it in sync context
             try:
-                # Check if there's an existing running loop
-                asyncio.get_running_loop()
-                # We're in an async context, need to run in executor
-                with concurrent.futures.ThreadPoolExecutor() as executor:
-                    future = executor.submit(asyncio.run, agent.answer_question(question))
-                    return future.result()
+                # Try to get existing event loop
+                loop = asyncio.get_event_loop()
+                if loop.is_running():
+                    # We're in an async context, need to run in executor
+                    with concurrent.futures.ThreadPoolExecutor() as executor:
+                        future = executor.submit(asyncio.run, agent.answer_question(question))
+                        return future.result()
+                else:
+                    # No running loop, safe to use run
+                    return loop.run_until_complete(agent.answer_question(question))
             except RuntimeError:
-                # No running loop, safe to use asyncio.run directly
-                # This creates a fresh loop each time, avoiding closed loop issues
+                # No event loop, create one
                 return asyncio.run(agent.answer_question(question))
         else:
             # Agent is sync, call directly

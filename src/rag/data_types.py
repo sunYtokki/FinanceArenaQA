@@ -136,7 +136,7 @@ class ContextPattern:
 class ConfidenceThresholds:
     """Confidence thresholds for RAG vs fallback decisions."""
 
-    RAG_MIN_CONFIDENCE = 0.6  # Minimum to use RAG results
+    RAG_MIN_CONFIDENCE = 0.45  # Minimum to use RAG results (lowered from 0.6)
     HIGH_CONFIDENCE = 0.8     # High confidence threshold
     SECTION_BONUS = 0.1       # Bonus for evidence from key sections
 

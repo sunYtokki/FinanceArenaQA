@@ -8,7 +8,6 @@ from typing import Optional, List, Dict, Any
 from .core import SimplifiedAgent, Tool, ReasoningChain
 from ..rag.context_patterns import ContextPatternStore, ContextRetriever
 from ..rag.financial_context_detector import FinancialContextDetector
-from ..data.pattern_loader import PatternLoader
 
 logger = logging.getLogger(__name__)
 
@@ -42,7 +41,6 @@ class ContextAwareAgent:
 
         self.context_detector = FinancialContextDetector()
         self.context_retriever = ContextRetriever(self.pattern_store)
-        self.pattern_loader = PatternLoader(self.pattern_store)
 
         # Initialize core agent with context retriever
         self.core_agent = SimplifiedAgent(
@@ -80,7 +78,7 @@ class ContextAwareAgent:
         """Get default configuration."""
         return {
             "confidence": {
-                "rag_min_confidence": 0.6,
+                "rag_min_confidence": 0.45,
                 "high_confidence": 0.8,
                 "section_bonus": 0.1
             },
@@ -155,26 +153,6 @@ class ContextAwareAgent:
         except Exception as e:
             logger.warning(f"Failed to log RAG usage: {e}")
 
-    def load_patterns_from_file(self, file_path: str, max_patterns: Optional[int] = None) -> int:
-        """Load patterns from JSONL file.
-
-        Args:
-            file_path: Path to JSONL file
-            max_patterns: Maximum patterns to load
-
-        Returns:
-            Number of patterns loaded
-        """
-        logger.info(f"Loading patterns from {file_path}")
-        return self.pattern_loader.load_from_jsonl(file_path, max_patterns)
-
-    def load_sample_patterns(self) -> int:
-        """Load sample patterns for testing.
-
-        Returns:
-            Number of sample patterns loaded
-        """
-        return self.pattern_loader.load_sample_patterns()
 
     def get_pattern_stats(self) -> Dict[str, Any]:
         """Get statistics about loaded patterns.
@@ -257,8 +235,7 @@ class ContextAwareAgent:
 def create_context_aware_agent(
     model_manager,
     tools: Optional[List[Tool]] = None,
-    config_path: str = "config/context_patterns.yaml",
-    load_sample_data: bool = True
+    config_path: str = "config/context_patterns.yaml"
 ) -> ContextAwareAgent:
     """Create a fully configured context-aware agent.
 
@@ -266,7 +243,6 @@ def create_context_aware_agent(
         model_manager: ModelManager instance
         tools: Optional list of tools
         config_path: Path to configuration file
-        load_sample_data: Whether to load sample patterns
 
     Returns:
         Configured ContextAwareAgent
@@ -277,8 +253,6 @@ def create_context_aware_agent(
         config_path=config_path
     )
 
-    if load_sample_data:
-        logger.info("Loading sample patterns")
-        agent.load_sample_patterns()
+    # Note: Sample data loading removed with PatternLoader
 
     return agent

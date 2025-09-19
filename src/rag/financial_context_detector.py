@@ -54,17 +54,24 @@ class FinancialContextDetector:
         # Extract amounts
         amounts = self._extract_amounts(combined_text)
 
+        # Store amounts for confidence calculation
+        self._last_detected_amounts = amounts
+
         # Detect context hints
         hints = self._detect_context_hints(combined_text)
+
+        # Extract company if not provided
+        if not company:
+            company = self._extract_company_from_context(combined_text)
 
         # Generate adjustment specifications
         adjustment_specs = self._generate_adjustment_specs(
             signals, amounts, hints, company
         )
 
-        # Calculate overall confidence
+        # Calculate overall confidence with all bonuses
         confidence = self._calculate_detection_confidence(
-            signals, adjustment_specs, hints
+            signals, adjustment_specs, hints, company
         )
 
         return DetectionResult(
@@ -76,7 +83,7 @@ class FinancialContextDetector:
         )
 
     def _detect_signals(self, text: str) -> List[str]:
-        """Detect financial adjustment signals in text.
+        """Detect financial adjustment signals in text with weighted importance.
 
         Args:
             text: Text to analyze
@@ -86,32 +93,98 @@ class FinancialContextDetector:
         """
         signals = []
 
+        # High-value financial keywords (weight 2x)
+        high_value_terms = [
+            "adjusted ebitda", "adjusted ebit", "non-gaap", "normalized",
+            "operating lease", "stock-based compensation", "restructuring",
+            "impairment", "one-time", "extraordinary"
+        ]
+
+        for term in high_value_terms:
+            if term in text:
+                signals.append(f"high_value:{term}")
+
         # Check for each adjustment type's keywords
         for adj_type, keywords in ADJUSTMENT_KEYWORDS.items():
             for keyword in keywords:
                 if keyword.lower() in text:
                     signals.append(f"{adj_type.value}:{keyword}")
 
-        # Check for specific calculation types
+        # Check for specific calculation types with emphasis
         if "adjusted" in text:
             if "ebitda" in text:
-                signals.append("adjusted_ebitda")
+                signals.append("high_value:adjusted_ebitda")
             if "ebit" in text:
                 signals.append("adjusted_ebit")
             if "margin" in text:
                 signals.append("adjusted_margin")
 
-        # Check for context indicators
-        if "broken out" in text or "detailed" in text:
-            signals.append("detailed_breakdown")
+        # Enhanced context indicators
+        context_indicators = [
+            ("broken out", "detailed_breakdown"),
+            ("detailed", "detailed_breakdown"),
+            ("breakdown", "detailed_breakdown"),
+            ("reconciliation", "reconciliation_available"),
+            ("calculation", "calculation_context"),
+            ("adjustments", "adjustment_context")
+        ]
 
+        for indicator, signal_name in context_indicators:
+            if indicator in text:
+                signals.append(signal_name)
+
+        # Financial statement context signals
         if "expense" in text and ("lease" in text or "rent" in text):
             signals.append("lease_expense_context")
 
         if "compensation" in text and "stock" in text:
             signals.append("stock_compensation_context")
 
+        # Add multi-word phrase detection
+        financial_phrases = [
+            "add back", "exclude from", "normalized for", "adjusted for",
+            "non-cash", "one-time charge", "special items"
+        ]
+
+        for phrase in financial_phrases:
+            if phrase in text:
+                signals.append(f"phrase:{phrase.replace(' ', '_')}")
+
         return list(set(signals))  # Remove duplicates
+
+    def _extract_company_from_context(self, text: str) -> Optional[str]:
+        """Extract company name from context using simple patterns.
+
+        Args:
+            text: Text to analyze
+
+        Returns:
+            Company name if detected, None otherwise
+        """
+        text_upper = text.upper()
+
+        # Known company patterns with variations
+        company_patterns = {
+            "COSTCO": ["COSTCO WHOLESALE", "COSTCO"],
+            "Apple": ["APPLE INC", "APPLE"],
+            "Microsoft": ["MICROSOFT", "MSFT"],
+            "Amazon": ["AMAZON", "AMZN", "AMAZON.COM"],
+            "Google": ["ALPHABET", "GOOGLE", "GOOGL", "GOOG"],
+            "Meta": ["META", "FACEBOOK", "META PLATFORMS"],
+            "Tesla": ["TESLA", "TSLA"],
+            "Netflix": ["NETFLIX", "NFLX"],
+            "Walmart": ["WALMART", "WMT"],
+            "JPMorgan": ["JPMORGAN", "JPM", "JP MORGAN"],
+            "Johnson & Johnson": ["JOHNSON", "JNJ"],
+            "Procter & Gamble": ["PROCTER", "PG", "P&G"],
+        }
+
+        for company, patterns in company_patterns.items():
+            for pattern in patterns:
+                if pattern in text_upper:
+                    return company
+
+        return None
 
     def _extract_amounts(self, text: str) -> Dict[str, float]:
         """Extract monetary amounts from text.
@@ -399,7 +472,8 @@ class FinancialContextDetector:
         self,
         signals: List[str],
         adjustment_specs: List[AdjustmentSpec],
-        hints: List[str]
+        hints: List[str],
+        company: Optional[str] = None
     ) -> float:
         """Calculate overall detection confidence.
 
@@ -407,6 +481,7 @@ class FinancialContextDetector:
             signals: Detected signals
             adjustment_specs: Generated adjustment specs
             hints: Context hints
+            company: Company name if detected
 
         Returns:
             Overall confidence score
@@ -414,26 +489,130 @@ class FinancialContextDetector:
         if not signals and not adjustment_specs:
             return 0.0
 
-        # Base confidence from signals
-        signal_confidence = min(0.8, len(signals) * 0.1 + 0.2)
+        # Calculate weighted signal confidence
+        signal_score = 0
+        for signal in signals:
+            if signal.startswith("high_value:"):
+                signal_score += 2  # High-value signals count double
+            elif signal.startswith("phrase:"):
+                signal_score += 1.5  # Phrase signals get bonus
+            else:
+                signal_score += 1  # Standard signals
 
-        # Adjustment spec confidence
+        # Improved base confidence from weighted signals
+        signal_confidence = min(0.9, signal_score * 0.12 + 0.4)
+
+        # Adjustment spec confidence with higher weight for multiple specs
         if adjustment_specs:
             spec_confidence = sum(spec.confidence for spec in adjustment_specs) / len(adjustment_specs)
+            # Bonus for multiple adjustment types detected
+            if len(adjustment_specs) > 1:
+                spec_confidence = min(1.0, spec_confidence + 0.1)
         else:
             spec_confidence = 0.0
 
-        # Hint bonus
-        hint_bonus = min(0.2, len(hints) * 0.05)
+        # Enhanced hint bonus for context quality
+        hint_bonus = min(0.25, len(hints) * 0.08)
 
-        # Weighted average
+        # Add context quality assessment
+        context_quality_bonus = self._assess_context_quality(signals, hints)
+
+        # Company recognition bonus
+        company_bonus = 0.0
+        if company:
+            company_bonus = 0.1  # Base bonus for known company
+
+            # Additional bonus for companies with known financial patterns
+            well_known_financial_companies = [
+                "COSTCO", "Apple", "Microsoft", "Amazon", "Google", "Meta",
+                "Tesla", "Netflix", "JPMorgan", "Walmart"
+            ]
+
+            if company in well_known_financial_companies:
+                company_bonus += 0.05  # Extra bonus for well-documented companies
+
+        # Amount detection bonus - having specific amounts increases confidence
+        amount_bonus = 0.0
+        if hasattr(self, '_last_detected_amounts'):
+            # Access amounts from the last detect_context call
+            amounts = getattr(self, '_last_detected_amounts', {})
+            if amounts:
+                # Base bonus for any amounts detected
+                amount_bonus = 0.05
+
+                # Additional bonus for multiple amounts (suggests detailed context)
+                if len(amounts) > 1:
+                    amount_bonus += 0.03
+
+                # Bonus for context-specific amounts
+                specific_amount_types = ['lease_amount', 'sbc_amount', 'depreciation_amount']
+                specific_amounts = [amt for amt in amounts.keys() if amt in specific_amount_types]
+                if specific_amounts:
+                    amount_bonus += 0.02
+
+        # Weighted average with all bonuses including context quality
         overall_confidence = (
-            signal_confidence * 0.4 +
-            spec_confidence * 0.5 +
-            hint_bonus * 0.1
+            signal_confidence * 0.35 +
+            spec_confidence * 0.25 +
+            hint_bonus * 0.1 +
+            company_bonus * 0.1 +
+            amount_bonus * 0.1 +
+            context_quality_bonus * 0.1
         )
 
-        return min(1.0, overall_confidence)
+        final_confidence = min(1.0, overall_confidence)
+
+        # Debug logging for confidence calculation
+        logger.debug(f"Confidence breakdown: signals={signal_confidence:.3f}, "
+                    f"specs={spec_confidence:.3f}, hints={hint_bonus:.3f}, "
+                    f"company={company_bonus:.3f}, amounts={amount_bonus:.3f}, "
+                    f"quality={context_quality_bonus:.3f} → final={final_confidence:.3f}")
+
+        return final_confidence
+
+    def _assess_context_quality(self, signals: List[str], hints: List[str]) -> float:
+        """Assess context quality based on signals and hints.
+
+        Args:
+            signals: Detected signals
+            hints: Context hints
+
+        Returns:
+            Context quality bonus (0.0 to 0.15)
+        """
+        quality_score = 0.0
+
+        # Financial statement indicators (high quality)
+        financial_statement_indicators = [
+            "income statement", "balance sheet", "cash flow", "consolidated",
+            "note", "footnote", "10-k", "10-q", "financial statement"
+        ]
+
+        # Check if signals suggest high-quality financial context
+        for signal in signals:
+            if any(indicator in signal.lower() for indicator in financial_statement_indicators):
+                quality_score += 0.03
+                break  # Don't double count
+
+        # Check hints for quality indicators
+        quality_hints = [
+            "detailed_breakdown", "reconciliation_available", "calculation_context"
+        ]
+
+        for hint in hints:
+            if hint in quality_hints:
+                quality_score += 0.02
+
+        # Bonus for structured financial data vs general text
+        if "reconciliation_available" in hints or "detailed_breakdown" in hints:
+            quality_score += 0.05  # Structured data bonus
+
+        # Check for multiple high-value signals (suggests comprehensive context)
+        high_value_signals = [s for s in signals if s.startswith("high_value:")]
+        if len(high_value_signals) >= 2:
+            quality_score += 0.03
+
+        return min(0.15, quality_score)
 
     def should_use_rag(self, detection_result: DetectionResult) -> bool:
         """Determine if RAG should be used based on detection results.
@@ -444,7 +623,13 @@ class FinancialContextDetector:
         Returns:
             True if RAG should be used
         """
-        return detection_result.confidence >= ConfidenceThresholds.RAG_MIN_CONFIDENCE
+        use_rag = detection_result.confidence >= ConfidenceThresholds.RAG_MIN_CONFIDENCE
+
+        logger.debug(f"RAG decision: confidence={detection_result.confidence:.3f} "
+                    f"vs threshold={ConfidenceThresholds.RAG_MIN_CONFIDENCE} "
+                    f"→ use_rag={use_rag}")
+
+        return use_rag
 
     def get_fallback_reason(self, detection_result: DetectionResult) -> Optional[str]:
         """Get reason for falling back to assumptions.
