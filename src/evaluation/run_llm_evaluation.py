@@ -57,10 +57,8 @@ class LLMEvaluator:
 
         # Common patterns for final answers
         patterns = [
-            # <answer>: X
-            r'<answer>[:\s]*(.+?)(?:\n|$)',
-            # answer: X 
-            r'answer[:\s]*(.+?)(?:\n|$)',
+            # <final_answer>: X
+            r'<final_answer>[:\s]*(.+?)(?:\n|$)',
         ]
 
         for pattern in patterns:

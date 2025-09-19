@@ -992,7 +992,7 @@ class Agent:
             Instructions:
             1. Show your reasoning briefly (if necessary).
             2. Always end with the exact final answer on a new line, 
-            starting with '<answer>:' and nothing else before it.
+            starting with '<final_answer>:' and nothing else before it.
             3. The final answer must be concise, in the correct financial format 
 
             Now, provide your response.
