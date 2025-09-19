@@ -1,14 +1,15 @@
 # FinanceQA AI Agent
 
-A multi-step reasoning AI agent designed to improve upon the 54.1% baseline performance on the FinanceQA benchmark through intelligent question classification, financial calculation tools, and adaptive reasoning strategies.
+A unified multi-step reasoning AI agent designed to improve upon the 54.1% baseline performance on the FinanceQA benchmark through tool-based architecture, RAG-enhanced context retrieval, and financial calculation capabilities.
 
 ## Overview
 
 This agent tackles complex financial analysis tasks that traditional LLMs struggle with by:
-- **Question Classification**: Automatically routes questions to appropriate reasoning strategies
-- **Multi-step Reasoning**: Decomposes complex problems into manageable steps
+- **Tool-Based Architecture**: RAG and financial calculations as first-class tools
+- **Multi-step Reasoning**: 5-step reasoning chain with tool integration points
+- **RAG-Enhanced Context**: Retrieval-augmented generation for financial patterns and adjustments
 - **Financial Tools**: Specialized calculators for NPV, IRR, ratios, and ROI
-- **Error Handling**: Graceful degradation with LLM fallbacks
+- **Graceful Degradation**: Continues processing when individual tools fail
 - **Reasoning Chain Inspection**: Complete transparency into decision-making process
 
 ## Quick Start
@@ -54,11 +55,10 @@ This agent tackles complex financial analysis tasks that traditional LLMs strugg
 
 ```python
 import asyncio
-from src.agent.core import Agent
-from src.models.model_manager import ModelManager, create_model_manager_from_config
-from src.tools.financial_calculator import FinancialCalculator
+from src.agent.financial_agent import FinancialAgent
+from src.models.model_manager import create_model_manager_from_config
 
-# Configure model manager
+# Configure model manager with RAG settings
 config = {
     "providers": {
         "ollama": {
@@ -68,32 +68,48 @@ config = {
             "temperature": 0.1
         }
     },
-    "default_provider": "ollama"
+    "default_provider": "ollama",
+    "rag": {
+        "enabled": true,
+        "chroma_persist_dir": "./chroma_db",
+        "collection_name": "financial_patterns",
+        "confidence_thresholds": {
+            "rag_min_confidence": 0.6,
+            "high_confidence": 0.8
+        }
+    }
 }
 
 async def main():
     # Use context manager for automatic resource cleanup
     async with create_model_manager_from_config(config) as model_manager:
-        financial_calc = FinancialCalculator()
-
-        # Create agent
-        agent = Agent(model_manager, tools=[financial_calc])
+        # Create unified financial agent with RAG and calculation tools
+        agent = FinancialAgent(model_manager, config=config, enable_rag=True)
 
         # Ask a financial question
         question = "Calculate the ROI if I invest $1000 and gain $1200"
 
-        # Get reasoning chain
-        chain = await agent.answer_question(question)
+        # Get reasoning chain (can use sync or async)
+        chain = agent.answer_question(question)  # Sync wrapper
+        # Or: chain = await agent.answer_question_async(question)  # Async
 
         # Print results
         print(f"Question: {question}")
         print(f"Answer: {chain.final_answer}")
         print(f"Confidence: {chain.confidence_score}")
         print(f"Steps: {len(chain.steps)}")
+        print(f"Tools used: {len(agent.tools)}")
     # Automatic cleanup happens here
 
 # Run the example
 asyncio.run(main())
+```
+
+### Without RAG (Simple Mode)
+
+```python
+# Disable RAG for pure calculation-focused usage
+agent = FinancialAgent(model_manager, config=config, enable_rag=False)
 ```
 
 ## End-to-End Testing
@@ -136,31 +152,39 @@ Evaluate agent performance on the FinanceQA benchmark using the modern CLI inter
 # Download FinanceQA dataset (if not already done)
 python scripts/download_financeqa.py
 
-# Full dataset evaluation (all examples) - Default behavior
+# Full dataset evaluation with RAG (default behavior)
 python src/evaluation/benchmark_runner.py \
     --dataset-path data/datasets/financeqa \
     --output-dir results/
 
-# Quick evaluation (50 samples for testing)
+# Quick evaluation with RAG (50 samples for testing)
 python src/evaluation/benchmark_runner.py \
     --num-samples 50 \
     --dataset-path data/datasets/financeqa \
     --output-dir results/
 
-# Evaluate specific question types
+# Evaluation without RAG (pure calculation mode)
 python src/evaluation/benchmark_runner.py \
-    --question-type "calculation" \
+    --num-samples 50 \
+    --disable-rag \
     --dataset-path data/datasets/financeqa \
     --output-dir results/
 
-# Combined: 20 calculation questions for targeted testing
+# Compare RAG vs non-RAG on calculation questions
 python src/evaluation/benchmark_runner.py \
     --question-type "calculation" \
     --num-samples 20 \
     --dataset-path data/datasets/financeqa \
     --output-dir results/
 
-# With LLM-based evaluation for improved accuracy assessment
+python src/evaluation/benchmark_runner.py \
+    --question-type "calculation" \
+    --num-samples 20 \
+    --disable-rag \
+    --dataset-path data/datasets/financeqa \
+    --output-dir results/
+
+# RAG-enhanced evaluation for conceptual questions
 python src/evaluation/benchmark_runner.py \
     --question-type "conceptual" \
     --num-samples 25 \
@@ -341,9 +365,36 @@ Edit `config/model_config.json`:
       "temperature": 0.1
     }
   },
-  "default_provider": "ollama"
+  "default_provider": "ollama",
+  "rag": {
+    "enabled": true,
+    "chroma_persist_dir": "./chroma_db",
+    "collection_name": "financial_patterns",
+    "config_path": "config/context_patterns.yaml",
+    "confidence_thresholds": {
+      "rag_min_confidence": 0.6,
+      "high_confidence": 0.8
+    },
+    "retrieval_settings": {
+      "max_results": 10,
+      "similarity_threshold": 0.7
+    },
+    "fallback_behavior": {
+      "continue_without_rag": true,
+      "log_failures": true
+    }
+  }
 }
 ```
+
+### RAG Configuration Options
+
+- `enabled`: Enable/disable RAG functionality
+- `chroma_persist_dir`: Directory for ChromaDB persistence
+- `collection_name`: ChromaDB collection for financial patterns
+- `confidence_thresholds`: Minimum confidence levels for using RAG results
+- `retrieval_settings`: Control number and quality of retrieved results
+- `fallback_behavior`: How to handle RAG failures
 
 ### Agent Configuration
 
@@ -358,24 +409,47 @@ Key parameters in `config/agent_config.py`:
 
 ### Adding New Financial Tools
 
-1. **Create tool class**:
+1. **Create tool class** (inherit from Tool base class):
    ```python
-   from src.tools.financial_calculator import FinancialTool
+   from src.agent.core import Tool
 
-   class MyFinancialTool(FinancialTool):
+   class MyFinancialTool(Tool):
        @property
        def name(self) -> str:
-           return "my_tool"
+           return "my_financial_tool"
 
-       async def execute(self, input_data):
+       @property
+       def description(self) -> str:
+           return "My custom financial calculation tool"
+
+       async def execute(self, input_data: Dict[str, Any]) -> Dict[str, Any]:
            # Implementation here
-           return {"result": calculated_value}
+           return {"result": calculated_value, "confidence": 0.9}
+
+       def validate_input(self, input_data: Dict[str, Any]) -> bool:
+           # Validate input data
+           return True
+
+       def is_available(self) -> bool:
+           # Check if tool dependencies are available
+           return True
    ```
 
-2. **Register with agent**:
+2. **Register with FinancialAgent**:
    ```python
-   agent.add_tool(MyFinancialTool())
+   # Tools are auto-registered during agent initialization
+   # For custom tools, modify the _initialize_tools method in FinancialAgent
+   # Or use manual registration:
+   agent.tools["my_tool"] = MyFinancialTool()
    ```
+
+3. **Tool Development Guidelines**:
+   - Inherit from `Tool` base class
+   - Implement all required methods: `name`, `description`, `execute`, `validate_input`
+   - Use async/await for execute method
+   - Return structured dictionaries from execute
+   - Handle errors gracefully with try/catch
+   - Check dependencies in `is_available()`
 
 ### Testing New Components
 
@@ -494,6 +568,14 @@ python src/evaluation/benchmark_runner.py \
 python src/evaluation/run_agent.py \
     --question-type "calculation" \
     --num-samples 25 \
+    --dataset-path data/datasets/financeqa \
+    --output-dir results/
+
+# Test with RAG disabled
+python src/evaluation/run_agent.py \
+    --question-type "calculation" \
+    --num-samples 25 \
+    --disable-rag \
     --dataset-path data/datasets/financeqa \
     --output-dir results/
 

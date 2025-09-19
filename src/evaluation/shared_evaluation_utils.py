@@ -243,6 +243,10 @@ def add_agent_evaluation_arguments(parser: argparse.ArgumentParser) -> argparse.
     parser.add_argument("--num-samples", type=int,
                         help="Limit processing to N samples (default: process all available)")
 
+    # RAG control arguments
+    parser.add_argument("--disable-rag", action="store_true",
+                        help="Disable RAG (Retrieval-Augmented Generation) tools")
+
     return parser
 
 
@@ -304,6 +308,10 @@ def validate_evaluation_arguments(args) -> None:
     if hasattr(args, 'question_type') and args.question_type and not args.question_type.strip():
         raise ValueError("--question-type cannot be empty")
 
+    # Log RAG status if disable_rag flag is present
+    if hasattr(args, 'disable_rag') and args.disable_rag:
+        print("🔧 RAG tools disabled via --disable-rag flag")
+
 
 def get_operation_mode(question_type: Optional[str] = None, num_samples: Optional[int] = None) -> str:
     """
@@ -357,31 +365,28 @@ def setup_model_manager(config_path: str = "config/model_config.json"):
         raise Exception(f"Failed to setup model manager: {e}")
 
 
-def setup_agent(model_manager, config: Dict[str, Any]):
+def setup_agent(model_manager, config: Dict[str, Any], enable_rag: bool = True):
     """
     Setup the FinanceQA agent with model manager and tools.
 
     Args:
         model_manager: Model manager instance
         config: Configuration dictionary
+        enable_rag: Whether to enable RAG tools (default: True)
 
     Returns:
-        Configured agent instance
+        Configured FinancialAgent instance
 
     Raises:
         Exception: If agent setup fails
     """
     try:
-        from src.agent.core_deprecated import Agent
-        from src.tools.financial_calculator import FinancialCalculator
+        from src.agent.financial_agent import FinancialAgent
 
-        # Create tools
-        financial_calc = FinancialCalculator()
+        # Create unified financial agent with tool-based architecture
+        agent = FinancialAgent(model_manager, config=config, enable_rag=enable_rag)
 
-        # Create agent
-        agent = Agent(model_manager, tools=[financial_calc])
-
-        # Add question classifier if possible
+        # Add question classifier if possible (backward compatibility)
         try:
             from src.classifiers.question_classifier import QuestionClassifier
             classifier = QuestionClassifier()
@@ -392,7 +397,31 @@ def setup_agent(model_manager, config: Dict[str, Any]):
         return agent
 
     except Exception as e:
-        raise Exception(f"Failed to setup agent: {e}")
+        # Fallback to simplified agent if FinancialAgent fails
+        try:
+            from src.agent.core import SimplifiedAgent
+            from src.tools.financial_calculator import FinancialCalculator
+
+            print(f"⚠️ FinancialAgent failed ({e}), falling back to SimplifiedAgent")
+
+            # Create tools
+            financial_calc = FinancialCalculator()
+
+            # Create fallback agent
+            agent = SimplifiedAgent(model_manager, tools=[financial_calc])
+
+            # Add question classifier if possible
+            try:
+                from src.classifiers.question_classifier import QuestionClassifier
+                classifier = QuestionClassifier()
+                agent.question_classifier = classifier
+            except Exception:
+                pass
+
+            return agent
+
+        except Exception as fallback_error:
+            raise Exception(f"Failed to setup agent: {e}. Fallback also failed: {fallback_error}")
 
 
 def setup_llm_scorer(model_manager, evaluation_model: Optional[str] = None, config: Optional[Dict[str, Any]] = None):

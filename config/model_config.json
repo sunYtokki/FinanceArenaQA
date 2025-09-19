@@ -1,4 +1,29 @@
 {
+  "_schema_documentation": {
+    "_comment": "Configuration schema for FinanceQA AI Agent",
+    "providers": "Model provider configurations with type, model_name, base_url, etc.",
+    "default_provider": "Default provider name to use for agent operations",
+    "evaluation": "Specific provider settings for evaluation runs",
+    "rag": {
+      "_description": "RAG (Retrieval-Augmented Generation) configuration",
+      "enabled": "Boolean to enable/disable RAG functionality",
+      "chroma_persist_dir": "Directory path for ChromaDB persistence",
+      "collection_name": "Name of ChromaDB collection for financial patterns",
+      "config_path": "Path to context patterns YAML configuration",
+      "confidence_thresholds": {
+        "rag_min_confidence": "Minimum confidence (0.0-1.0) to use RAG results",
+        "high_confidence": "High confidence threshold (0.0-1.0) for strong RAG signals"
+      },
+      "retrieval_settings": {
+        "max_results": "Maximum number of results to retrieve from RAG",
+        "similarity_threshold": "Minimum similarity score for relevant results"
+      },
+      "fallback_behavior": {
+        "continue_without_rag": "Continue processing if RAG fails",
+        "log_failures": "Log RAG failures for debugging"
+      }
+    }
+  },
   "providers": {
       "ollama": {
           "type": "ollama",
@@ -19,5 +44,23 @@
       "max_ctx": 12000,
       "max_predict": 7000,
       "timeout": 300
+  },
+  "rag": {
+      "enabled": true,
+      "chroma_persist_dir": "./chroma_db",
+      "collection_name": "financial_patterns",
+      "config_path": "config/context_patterns.yaml",
+      "confidence_thresholds": {
+          "rag_min_confidence": 0.6,
+          "high_confidence": 0.8
+      },
+      "retrieval_settings": {
+          "max_results": 10,
+          "similarity_threshold": 0.7
+      },
+      "fallback_behavior": {
+          "continue_without_rag": true,
+          "log_failures": true
+      }
   }
 }
