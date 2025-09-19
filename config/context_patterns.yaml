@@ -1,0 +1,144 @@
+# Context Patterns Configuration
+# Simple thresholds and keyword mappings for context-aware reasoning
+
+# Confidence thresholds for decision making
+confidence:
+  rag_min_confidence: 0.6  # Minimum confidence to use RAG results
+  high_confidence: 0.8     # High confidence threshold
+  section_bonus: 0.1       # Bonus for evidence from key sections
+
+# Section importance weights
+section_weights:
+  "leases": 0.9
+  "note": 0.8
+  "footnote": 0.8
+  "cash flows": 0.7
+  "income statement": 0.6
+  "balance sheet": 0.6
+  "md&a": 0.4
+  "other": 0.3
+
+# Keywords for different adjustment types
+adjustment_keywords:
+  lease_addback:
+    - "operating lease"
+    - "variable lease"
+    - "lease expense"
+    - "lease cost"
+    - "right-of-use"
+    - "rou asset"
+    - "lease liability"
+    - "asc 842"
+
+  sbc_addback:
+    - "stock-based compensation"
+    - "stock based compensation"
+    - "equity compensation"
+    - "restricted stock"
+    - "stock options"
+    - "rsu"
+    - "stock award"
+
+  restructuring_excl:
+    - "restructuring"
+    - "severance"
+    - "reorganization"
+    - "facility closure"
+    - "workforce reduction"
+    - "restructuring charge"
+
+  impairment_excl:
+    - "impairment"
+    - "impairment charge"
+    - "asset impairment"
+    - "goodwill impairment"
+    - "write-down"
+    - "write-off"
+
+  depreciation_addback:
+    - "depreciation"
+    - "depreciation expense"
+    - "accumulated depreciation"
+
+  amortization_addback:
+    - "amortization"
+    - "amortization expense"
+    - "intangible amortization"
+
+# ChromaDB configuration
+chromadb:
+  persist_directory: "./chroma_db"
+  collection_name: "financial_patterns"
+  max_results: 5
+
+# RAG retrieval configuration
+retrieval:
+  hybrid_search: true
+  keyword_filtering: true
+  vector_search: true
+  reranking: false  # Keep it simple
+  top_k: 5
+  timeout_ms: 200
+
+# Company-specific patterns
+company_patterns:
+  costco:
+    preferred_adjustments:
+      - "lease_addback"
+    confidence_bonus: 0.1
+    notes: "Costco often provides detailed lease disclosures"
+
+  apple:
+    preferred_adjustments:
+      - "sbc_addback"
+    confidence_bonus: 0.15
+    notes: "Tech companies emphasize stock-based compensation"
+
+  microsoft:
+    preferred_adjustments:
+      - "sbc_addback"
+    confidence_bonus: 0.15
+    notes: "Tech companies emphasize stock-based compensation"
+
+# Context hint patterns
+context_hints:
+  detailed_breakdown:
+    signals:
+      - "broken out"
+      - "detailed"
+      - "separately disclosed"
+    confidence_bonus: 0.2
+
+  non_cash_emphasis:
+    signals:
+      - "non-cash"
+      - "non cash"
+      - "stock-based"
+    confidence_bonus: 0.1
+
+  gaap_vs_non_gaap:
+    signals:
+      - "adjusted"
+      - "non-gaap"
+      - "non gaap"
+    confidence_bonus: 0.05
+
+# Fallback configuration
+fallback:
+  default_assumptions:
+    - "Add back stock-based compensation for adjusted metrics"
+    - "Add back depreciation and amortization for EBITDA"
+    - "Use standard industry practices for adjustments"
+
+  fallback_reasons:
+    - "Low confidence evidence"
+    - "No context retriever available"
+    - "No relevant patterns found"
+    - "Evidence score below threshold"
+
+# Logging configuration
+logging:
+  log_rag_decisions: true
+  log_confidence_scores: true
+  log_adjustment_selections: true
+  log_fallback_reasons: true
