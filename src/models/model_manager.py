@@ -194,6 +194,15 @@ class ModelManager:
             if hasattr(provider, 'close'):
                 await provider.close()
 
+    async def __aenter__(self):
+        """Async context manager entry."""
+        return self
+
+    async def __aexit__(self, exc_type, exc_val, exc_tb):
+        """Async context manager exit with cleanup."""
+        await self.close_all()
+        return False  # Don't suppress exceptions
+
 
 def create_model_manager_from_config(config_dict: Dict[str, Any]) -> ModelManager:
     """Create a ModelManager from configuration dictionary.

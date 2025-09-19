@@ -474,18 +474,20 @@ from src.agent.core import Agent
 
 # Load configuration
 config = {...}  # Load from JSON
-model_manager = create_model_manager_from_config(config)
 
-# Create agent with safety limits
-agent = Agent(model_manager, tools=[], max_steps=15)
+# Use context manager for automatic resource cleanup
+async with create_model_manager_from_config(config) as model_manager:
+    # Create agent with safety limits
+    agent = Agent(model_manager, tools=[], max_steps=15)
 
-# Answer question
-chain = await agent.answer_question("What is the NPV of cash flows [100, 200, 300] at 10% discount rate?")
+    # Answer question
+    chain = await agent.answer_question("What is the NPV of cash flows [100, 200, 300] at 10% discount rate?")
 
-# Access results
-print(f"Answer: {chain.final_answer}")
-print(f"Steps: {len(chain.steps)}")
-print(f"Confidence: {chain.confidence_score}")
+    # Access results
+    print(f"Answer: {chain.final_answer}")
+    print(f"Steps: {len(chain.steps)}")
+    print(f"Confidence: {chain.confidence_score}")
+# Automatic cleanup happens here
 ```
 
 ### Advanced Usage with Tools
@@ -493,22 +495,25 @@ print(f"Confidence: {chain.confidence_score}")
 ```python
 from src.tools.financial_calculator import FinancialCalculator
 
-# Create tools
-financial_calc = FinancialCalculator()
+# Use context manager for the full workflow
+async with create_model_manager_from_config(config) as model_manager:
+    # Create tools
+    financial_calc = FinancialCalculator()
 
-# Create agent with tools
-agent = Agent(model_manager, tools=[financial_calc], max_steps=20)
+    # Create agent with tools
+    agent = Agent(model_manager, tools=[financial_calc], max_steps=20)
 
-# Complex question requiring tools
-chain = await agent.answer_question("Calculate the IRR for an investment...")
+    # Complex question requiring tools
+    chain = await agent.answer_question("Calculate the IRR for an investment...")
 
-# Analyze reasoning process
-for step in chain.steps:
-    print(f"{step.description}: {step.status.value}")
-    if step.tool_used:
-        print(f"  Tool: {step.tool_used}")
-    if step.execution_time_ms:
-        print(f"  Time: {step.execution_time_ms}ms")
+    # Analyze reasoning process
+    for step in chain.steps:
+        print(f"{step.description}: {step.status.value}")
+        if step.tool_used:
+            print(f"  Tool: {step.tool_used}")
+        if step.execution_time_ms:
+            print(f"  Time: {step.execution_time_ms}ms")
+# Automatic cleanup happens here
 ```
 
 ### Evaluation and Benchmarking

@@ -187,30 +187,15 @@ class Agent:
 
         try:
             # Step 1: Analyze and decompose the question
-            # analysis_step = await self._safe_execute_step(self._analyze_question, question, chain)
-            # chain.add_step(analysis_step)
-
-            # Check max steps limit
-            # if len(chain.steps) >= self.max_steps:
-            #     logger.warning(f"Reached max steps limit ({self.max_steps}), stopping early")
-            #     return chain
+            analysis_step = await self._safe_execute_step(self._analyze_question, question, chain)
+            chain.add_step(analysis_step)
 
             # Step 2: Generate reasoning plan
-            # plan_step = await self._safe_execute_step(self._generate_reasoning_plan, chain)
-            # chain.add_step(plan_step)
-
-            # Check max steps limit
-            # if len(chain.steps) >= self.max_steps:
-            #     logger.warning(f"Reached max steps limit ({self.max_steps}), stopping early")
-            #     return chain
+            plan_step = await self._safe_execute_step(self._generate_reasoning_plan, chain)
+            chain.add_step(plan_step)
 
             # Step 3: Execute reasoning steps
-            # await self._execute_reasoning_plan(chain)
-
-            # Check max steps limit
-            # if len(chain.steps) >= self.max_steps:
-            #     logger.warning(f"Reached max steps limit ({self.max_steps}), stopping early")
-            #     return chain
+            await self._execute_reasoning_plan(chain)
 
             # Step 4: Synthesize final answer
             synthesis_step = await self._safe_execute_step(self._synthesize_answer, chain)

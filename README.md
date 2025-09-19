@@ -72,24 +72,25 @@ config = {
 }
 
 async def main():
-    # Initialize components
-    model_manager = create_model_manager_from_config(config)
-    financial_calc = FinancialCalculator()
+    # Use context manager for automatic resource cleanup
+    async with create_model_manager_from_config(config) as model_manager:
+        financial_calc = FinancialCalculator()
 
-    # Create agent
-    agent = Agent(model_manager, tools=[financial_calc])
+        # Create agent
+        agent = Agent(model_manager, tools=[financial_calc])
 
-    # Ask a financial question
-    question = "Calculate the ROI if I invest $1000 and gain $1200"
+        # Ask a financial question
+        question = "Calculate the ROI if I invest $1000 and gain $1200"
 
-    # Get reasoning chain
-    chain = await agent.answer_question(question)
+        # Get reasoning chain
+        chain = await agent.answer_question(question)
 
-    # Print results
-    print(f"Question: {question}")
-    print(f"Answer: {chain.final_answer}")
-    print(f"Confidence: {chain.confidence_score}")
-    print(f"Steps: {len(chain.steps)}")
+        # Print results
+        print(f"Question: {question}")
+        print(f"Answer: {chain.final_answer}")
+        print(f"Confidence: {chain.confidence_score}")
+        print(f"Steps: {len(chain.steps)}")
+    # Automatic cleanup happens here
 
 # Run the example
 asyncio.run(main())

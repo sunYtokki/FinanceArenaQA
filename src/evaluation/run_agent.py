@@ -419,7 +419,7 @@ class AgentRunner:
         print(f"📝 Next step: Use run_llm_evaluation.py to evaluate these results")
 
 
-def main():
+async def main():
     """Command-line interface for agent result generation."""
     # Create argument parser
     parser = create_base_argument_parser("FinanceQA Agent Result Generation")
@@ -431,46 +431,47 @@ def main():
         # Validate arguments
         validate_evaluation_arguments(args)
 
-        # Setup model manager and agent
+        # Setup model manager with context manager for automatic cleanup
         print("🔧 Setting up model manager...")
         model_manager, config = setup_model_manager()
         print(f"✅ Model manager setup complete using {config['default_provider']}")
 
-        print("🤖 Setting up FinanceQA agent...")
-        agent = setup_agent(model_manager, config)
-        print("✅ FinanceQA agent setup complete")
+        async with model_manager as mm:
+            print("🤖 Setting up FinanceQA agent...")
+            agent = setup_agent(mm, config)
+            print("✅ FinanceQA agent setup complete")
+
+            # Initialize runner
+            runner = AgentRunner(dataset_path=args.dataset_path)
+            verbose = not args.no_verbose
+
+            try:
+                # Use modern unified evaluation interface
+                runner.run_evaluation(
+                    agent=agent,
+                    question_type=getattr(args, 'question_type', None),
+                    num_samples=getattr(args, 'num_samples', None),
+                    split=args.split,
+                    output_file=args.output_file,
+                    verbose=verbose
+                )
+
+            except FileNotFoundError as e:
+                print(f"Error: {e}")
+                print("Make sure the FinanceQA dataset is downloaded and in the correct location.")
+                sys.exit(1)
+            except Exception as e:
+                print(f"Agent run failed: {e}")
+                sys.exit(1)
+
+            print(f"\n✅ Agent run completed successfully!")
+            print(f"📄 Results saved to results/ directory")
+            print(f"🔄 Next step: Use run_llm_evaluation.py to evaluate these results")
 
     except Exception as e:
         print(f"❌ Failed to setup agent: {e}")
         sys.exit(1)
 
-    # Initialize runner
-    runner = AgentRunner(dataset_path=args.dataset_path)
-    verbose = not args.no_verbose
-
-    try:
-        # Use modern unified evaluation interface
-        runner.run_evaluation(
-            agent=agent,
-            question_type=getattr(args, 'question_type', None),
-            num_samples=getattr(args, 'num_samples', None),
-            split=args.split,
-            output_file=args.output_file,
-            verbose=verbose
-        )
-
-    except FileNotFoundError as e:
-        print(f"Error: {e}")
-        print("Make sure the FinanceQA dataset is downloaded and in the correct location.")
-        sys.exit(1)
-    except Exception as e:
-        print(f"Agent run failed: {e}")
-        sys.exit(1)
-
-    print(f"\n✅ Agent run completed successfully!")
-    print(f"📄 Results saved to results/ directory")
-    print(f"🔄 Next step: Use run_llm_evaluation.py to evaluate these results")
-
 
 if __name__ == "__main__":
-    main()
+    asyncio.run(main())

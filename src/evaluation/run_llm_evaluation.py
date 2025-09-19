@@ -59,6 +59,8 @@ class LLMEvaluator:
         patterns = [
             # <final_answer>: X
             r'<final_answer>[:\s]*(.+?)(?:\n|$)',
+            # <answer>: X
+            r'<answer>[:\s]*(.+?)(?:\n|$)',
         ]
 
         for pattern in patterns:
