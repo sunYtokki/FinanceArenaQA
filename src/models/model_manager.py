@@ -190,9 +190,17 @@ class ModelManager:
 
     async def close_all(self):
         """Close all provider connections."""
-        for provider in self._providers.values():
+        for name, provider in self._providers.items():
             if hasattr(provider, 'close'):
-                await provider.close()
+                try:
+                    await provider.close()
+                    logger.debug(f"Closed provider: {name}")
+                except Exception as e:
+                    logger.warning(f"Error closing provider {name}: {e}")
+
+    async def cleanup(self):
+        """Alias for close_all for consistency."""
+        await self.close_all()
 
     async def __aenter__(self):
         """Async context manager entry."""

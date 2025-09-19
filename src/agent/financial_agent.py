@@ -33,6 +33,7 @@ class FinancialAgent:
         self.enable_rag = enable_rag
         self.tools: Dict[str, Tool] = {}
         self.reasoning_chains: Dict[str, ReasoningChain] = {}
+        self._cleanup_called = False
 
         # Validate configuration
         self._validate_config()
@@ -41,6 +42,53 @@ class FinancialAgent:
         self._initialize_tools()
 
         logger.info(f"FinancialAgent initialized with {len(self.tools)} tools, RAG enabled: {enable_rag}")
+
+    async def __aenter__(self):
+        """Async context manager entry."""
+        return self
+
+    async def __aexit__(self, exc_type, exc_val, exc_tb):
+        """Async context manager exit with cleanup."""
+        await self.cleanup()
+        return False  # Don't suppress exceptions
+
+    async def cleanup(self) -> None:
+        """Clean up agent resources including model manager connections."""
+        try:
+            # Mark cleanup as called
+            self._cleanup_called = True
+
+            # Clean up model manager if it has cleanup methods
+            if hasattr(self.model_manager, 'cleanup'):
+                await self.model_manager.cleanup()
+            elif hasattr(self.model_manager, 'close'):
+                await self.model_manager.close()
+            elif hasattr(self.model_manager, 'close_all'):
+                await self.model_manager.close_all()
+
+            # Clean up tools that might have async resources
+            for tool in self.tools.values():
+                if hasattr(tool, 'cleanup'):
+                    await tool.cleanup()
+
+            logger.info("FinancialAgent cleanup completed")
+        except Exception as e:
+            logger.warning(f"Error during cleanup: {e}")
+
+    def __del__(self):
+        """Destructor - avoid async operations during garbage collection."""
+        # NOTE: Cannot reliably run async cleanup during destruction
+        # as event loop may be closed. Cleanup should be called explicitly
+        # before destruction via context manager or explicit cleanup() call.
+        try:
+            # Log warning if resources might not be cleaned up
+            if hasattr(self, '_cleanup_called') and not self._cleanup_called:
+                logger.warning(
+                    "FinancialAgent destroyed without explicit cleanup. "
+                    "Use 'async with agent:' or call 'await agent.cleanup()' explicitly."
+                )
+        except Exception:
+            pass  # Ignore all errors in destructor
 
     def _validate_config(self) -> None:
         """Validate the configuration and apply defaults."""
@@ -99,20 +147,34 @@ class FinancialAgent:
             ReasoningChain containing the complete reasoning process
         """
         import asyncio
+        import threading
 
         # Handle the async call in a sync wrapper
         try:
-            # Get or create event loop
-            loop = asyncio.get_event_loop()
-            if loop.is_running():
-                # If loop is already running (e.g., in Jupyter), use run_in_executor
+            # Try to detect if we're in an async context
+            try:
+                # Check if there's an existing loop
+                current_loop = asyncio.get_running_loop()
+                # If we get here, there's a running loop - use thread executor
                 import concurrent.futures
+
+                def run_async():
+                    # Create a new event loop in the thread
+                    new_loop = asyncio.new_event_loop()
+                    asyncio.set_event_loop(new_loop)
+                    try:
+                        return new_loop.run_until_complete(self.answer_question_async(question, **kwargs))
+                    finally:
+                        new_loop.close()
+
                 with concurrent.futures.ThreadPoolExecutor() as executor:
-                    future = executor.submit(asyncio.run, self.answer_question_async(question, **kwargs))
-                    return future.result()
-            else:
-                # If no loop is running, use asyncio.run
+                    future = executor.submit(run_async)
+                    return future.result(timeout=300)  # 5 minute timeout
+
+            except RuntimeError:
+                # No running loop, safe to use asyncio.run
                 return asyncio.run(self.answer_question_async(question, **kwargs))
+
         except Exception as e:
             logger.error(f"Error in sync answer_question wrapper: {e}")
             # Return a basic error chain for compatibility

@@ -133,30 +133,19 @@ IMPORTANT: Respond with ONLY a valid JSON object. Do not include any additional 
         try:
             # Handle event loop more robustly
             try:
-                # Try to get existing event loop
-                loop = asyncio.get_event_loop()
-                if loop.is_closed():
-                    # Create new event loop if closed
-                    loop = asyncio.new_event_loop()
-                    asyncio.set_event_loop(loop)
-
-                # Run the async function
-                if loop.is_running():
-                    # If loop is running, we need to use run_until_complete in a thread
-                    import concurrent.futures
-                    with concurrent.futures.ThreadPoolExecutor() as executor:
-                        future = executor.submit(
-                            asyncio.run,
-                            self._evaluate_answer_pair_async(predicted, ground_truth, question)
-                        )
-                        return future.result()
-                else:
-                    # Loop exists but not running, safe to use
-                    return loop.run_until_complete(
+                # Check if there's an existing running loop
+                asyncio.get_running_loop()
+                # We're in an async context, need to run in executor
+                import concurrent.futures
+                with concurrent.futures.ThreadPoolExecutor() as executor:
+                    future = executor.submit(
+                        asyncio.run,
                         self._evaluate_answer_pair_async(predicted, ground_truth, question)
                     )
+                    return future.result()
             except RuntimeError:
-                # No event loop, create one
+                # No running loop, safe to use asyncio.run directly
+                # This creates a fresh loop each time, avoiding closed loop issues
                 return asyncio.run(self._evaluate_answer_pair_async(predicted, ground_truth, question))
 
         except Exception as e:

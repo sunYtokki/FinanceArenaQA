@@ -19,17 +19,35 @@ class OllamaProvider(ModelProvider):
         self.base_url = base_url.rstrip('/')
         self._session = None
         self._session_lock = None
+        self._closed = False
 
     async def _get_session(self) -> aiohttp.ClientSession:
         """Get or create aiohttp session with proper connection limits."""
+        if self._closed:
+            raise RuntimeError("Provider has been closed")
+
         if self._session_lock is None:
             import asyncio
             self._session_lock = asyncio.Lock()
 
         async with self._session_lock:
-            if self._session is None or self._session.closed:
+            # Check if session needs recreation due to event loop changes
+            session_invalid = (
+                self._session is None or
+                self._session.closed or
+                self._is_session_loop_invalid()
+            )
+
+            if session_invalid:
+                # Close old session if it exists
+                if self._session and not self._session.closed:
+                    try:
+                        await self._session.close()
+                    except Exception as e:
+                        logger.debug(f"Error closing old session: {e}")
+
+                # Create new session
                 timeout = aiohttp.ClientTimeout(total=self.config.timeout)
-                # Limit concurrent connections to prevent resource exhaustion
                 connector = aiohttp.TCPConnector(
                     limit=10,  # Max 10 concurrent connections
                     limit_per_host=5,  # Max 5 per host
@@ -40,7 +58,25 @@ class OllamaProvider(ModelProvider):
                     timeout=timeout,
                     connector=connector
                 )
+                logger.debug("Created new aiohttp session")
+
             return self._session
+
+    def _is_session_loop_invalid(self) -> bool:
+        """Check if session's event loop is different from current."""
+        if not self._session:
+            return False
+
+        try:
+            import asyncio
+            current_loop = asyncio.get_running_loop()
+            # Access session's loop if available
+            if hasattr(self._session, '_loop') and self._session._loop:
+                return self._session._loop != current_loop
+            return False
+        except Exception:
+            # If we can't determine, assume it's invalid to be safe
+            return True
 
     async def generate(self, prompt: str, **kwargs) -> ModelResponse:
         """Generate a response using Ollama API.
@@ -148,5 +184,22 @@ class OllamaProvider(ModelProvider):
 
     async def close(self):
         """Close the aiohttp session."""
+        self._closed = True
         if self._session and not self._session.closed:
-            await self._session.close()
+            try:
+                await self._session.close()
+            except Exception as e:
+                logger.warning(f"Error closing aiohttp session: {e}")
+            finally:
+                self._session = None
+
+    def __del__(self):
+        """Destructor - warn if session not properly closed."""
+        try:
+            if hasattr(self, '_session') and self._session and not getattr(self._session, 'closed', True):
+                logger.warning(
+                    "OllamaProvider session not properly closed. "
+                    "Use 'await provider.close()' or async context manager."
+                )
+        except Exception:
+            pass
