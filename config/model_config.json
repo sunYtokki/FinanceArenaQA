@@ -51,12 +51,12 @@
       "collection_name": "financial_patterns",
       "config_path": "config/context_patterns.yaml",
       "confidence_thresholds": {
-          "rag_min_confidence": 0.6,
+          "rag_min_confidence": 0.1,
           "high_confidence": 0.8
       },
       "retrieval_settings": {
           "max_results": 10,
-          "similarity_threshold": 0.7
+          "similarity_threshold": 0.5
       },
       "fallback_behavior": {
           "continue_without_rag": true,
