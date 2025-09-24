@@ -29,52 +29,77 @@ class LLMEvaluationResult:
 class LLMScorer:
     """LLM-based scorer for financial QA evaluation."""
 
-    def __init__(self, model_manager: ModelManager, model_name: Optional[str] = None):
+    def __init__(self, model_manager: ModelManager, model_name: Optional[str] = None, config: Optional[Dict[str, Any]] = None):
         """
         Initialize the LLM scorer.
 
         Args:
             model_manager: Model manager for LLM inference
             model_name: Specific model to use for evaluation (if None, uses default)
+            config: Configuration dictionary with evaluation settings
         """
         self.model_manager = model_manager
         self.model_name = model_name
+        self.config = config
+
+        # Extract evaluation-specific parameters from config
+        self.eval_config = {}
+        if config and 'evaluation' in config:
+            eval_section = config['evaluation']
+            self.eval_config = {
+                'temperature': eval_section.get('temperature', 0.1),
+                'max_ctx': eval_section.get('max_ctx', 12000),
+                'max_predict': eval_section.get('max_predict', 2048),
+                'timeout': eval_section.get('timeout', 30)
+            }
+            # Use evaluation model if not explicitly provided
+            if not self.model_name:
+                self.model_name = eval_section.get('model_name')
+        else:
+            # Default evaluation parameters
+            self.eval_config = {
+                'temperature': 0.1,
+                'max_ctx': 12000,
+                'max_predict': 2048,
+                'timeout': 30
+            }
 
         # Financial evaluation prompt template
-        self.evaluation_prompt = """You are an expert financial analyst evaluating the correctness of financial answers.
+        self.evaluation_prompt = """
+        You are an expert financial analyst evaluating the correctness of financial answers.
 
-Your task is to determine if a predicted answer matches the ground truth answer in the context of financial data.
+        Your task is to determine if a predicted answer matches the ground truth answer in the context of financial data.
 
-Consider these factors when evaluating:
-1. Numerical accuracy (exact values, proper units, reasonable approximations)
-2. Financial terminology (consistent use of financial concepts)
-3. Contextual correctness (answer fits the question context)
-4. Format equivalence (different valid representations of same value)
+        Consider these factors when evaluating:
+        1. Numerical accuracy (exact values, proper units, reasonable approximations)
+        2. Financial terminology (consistent use of financial concepts)
+        3. Contextual correctness (answer fits the question context)
+        4. Format equivalence (different valid representations of same value)
 
-Examples of CORRECT matches:
-- Predicted: "$1,000 million", Ground Truth: "$1 billion" (equivalent values)
-- Predicted: "32.5%", Ground Truth: "32.5 percent" (same value, different format)
-- Predicted: "Decreased by 15%", Ground Truth: "15% decline" (same meaning)
+        Examples of CORRECT matches:
+        - Predicted: "$1,000 million", Ground Truth: "$1 billion" (equivalent values)
+        - Predicted: "32.5%", Ground Truth: "32.5 percent" (same value, different format)
+        - Predicted: "Decreased by 15%", Ground Truth: "15% decline" (same meaning)
 
-Examples of INCORRECT matches:
-- Predicted: "$500 million", Ground Truth: "$1 billion" (different values)
-- Predicted: "Increased", Ground Truth: "Decreased" (opposite meaning)
-- Predicted: "Q3 2023", Ground Truth: "Q4 2023" (different time periods)
+        Examples of INCORRECT matches:
+        - Predicted: "$500 million", Ground Truth: "$1 billion" (different values)
+        - Predicted: "Increased", Ground Truth: "Decreased" (opposite meaning)
+        - Predicted: "Q3 2023", Ground Truth: "Q4 2023" (different time periods)
 
-Question: {question}
-Ground Truth Answer: {ground_truth}
-Predicted Answer: {predicted}
+        Question: {question}
+        Ground Truth Answer: {ground_truth}
+        Predicted Answer: {predicted}
 
-Evaluate whether the predicted answer is correct compared to the ground truth.
-Provide your response in the following JSON format:
+        Evaluate whether the predicted answer is correct compared to the ground truth.
 
-{{
-  "is_correct": true/false,
-  "reasoning": "Detailed explanation of your evaluation decision",
-  "confidence": 0.95
-}}
+        IMPORTANT: Respond with ONLY a valid JSON object. Do not include any additional text, explanations, or formatting outside the JSON.
 
-Response:"""
+        {{
+        "is_correct": true/false,
+        "reasoning": "Detailed explanation of your evaluation decision",
+        "confidence": 0.95
+        }}
+        """
 
     def compute_llm_match(self, predicted: str, ground_truth: str, question: str = "") -> bool:
         """
@@ -110,30 +135,19 @@ Response:"""
         try:
             # Handle event loop more robustly
             try:
-                # Try to get existing event loop
-                loop = asyncio.get_event_loop()
-                if loop.is_closed():
-                    # Create new event loop if closed
-                    loop = asyncio.new_event_loop()
-                    asyncio.set_event_loop(loop)
-
-                # Run the async function
-                if loop.is_running():
-                    # If loop is running, we need to use run_until_complete in a thread
-                    import concurrent.futures
-                    with concurrent.futures.ThreadPoolExecutor() as executor:
-                        future = executor.submit(
-                            asyncio.run,
-                            self._evaluate_answer_pair_async(predicted, ground_truth, question)
-                        )
-                        return future.result()
-                else:
-                    # Loop exists but not running, safe to use
-                    return loop.run_until_complete(
+                # Check if there's an existing running loop
+                asyncio.get_running_loop()
+                # We're in an async context, need to run in executor
+                import concurrent.futures
+                with concurrent.futures.ThreadPoolExecutor() as executor:
+                    future = executor.submit(
+                        asyncio.run,
                         self._evaluate_answer_pair_async(predicted, ground_truth, question)
                     )
+                    return future.result()
             except RuntimeError:
-                # No event loop, create one
+                # No running loop, safe to use asyncio.run directly
+                # This creates a fresh loop each time, avoiding closed loop issues
                 return asyncio.run(self._evaluate_answer_pair_async(predicted, ground_truth, question))
 
         except Exception as e:
@@ -168,12 +182,13 @@ Response:"""
                 predicted=predicted.strip()
             )
 
-            # Get LLM response using the correct async method
+            # Get LLM response using the correct async method with config parameters
             response = await self.model_manager.generate(
                 prompt=prompt,
                 provider_name=None,  # Use default provider
-                temperature=0.1,
-                max_tokens=512
+                temperature=self.eval_config['temperature'],
+                num_ctx=self.eval_config['max_ctx'],
+                num_predict=self.eval_config['max_predict']
             )
 
             processing_time = time.time() - start_time
@@ -200,81 +215,6 @@ Response:"""
                 error_message=str(e)
             )
 
-    def evaluate_batch(self, answer_pairs: List[Dict[str, str]],
-                       max_retries: int = 3,
-                       retry_delay: float = 1.0) -> List[LLMEvaluationResult]:
-        """
-        Evaluate multiple answer pairs efficiently with retry logic.
-
-        Args:
-            answer_pairs: List of dicts with 'predicted', 'ground_truth', and optional 'question' keys
-            max_retries: Maximum number of retries for failed evaluations
-            retry_delay: Base delay between retries (exponential backoff)
-
-        Returns:
-            List of LLMEvaluationResult objects
-        """
-        results = []
-
-        for i, pair in enumerate(answer_pairs):
-            result = self._evaluate_with_retry(
-                predicted=pair["predicted"],
-                ground_truth=pair["ground_truth"],
-                question=pair.get("question", ""),
-                max_retries=max_retries,
-                retry_delay=retry_delay,
-                pair_index=i
-            )
-            results.append(result)
-
-        return results
-
-    def _evaluate_with_retry(self, predicted: str, ground_truth: str, question: str = "",
-                           max_retries: int = 3, retry_delay: float = 1.0,
-                           pair_index: int = 0) -> LLMEvaluationResult:
-        """
-        Evaluate a single answer pair with exponential backoff retry.
-
-        Args:
-            predicted: Agent's predicted answer
-            ground_truth: Ground truth answer
-            question: Original question for context
-            max_retries: Maximum number of retries
-            retry_delay: Base delay between retries
-            pair_index: Index of this pair for logging
-
-        Returns:
-            LLMEvaluationResult with evaluation details
-        """
-        last_error = None
-
-        for attempt in range(max_retries + 1):
-            try:
-                result = self.evaluate_answer_pair(predicted, ground_truth, question)
-
-                # If we had previous failures but this succeeded, note it
-                if attempt > 0:
-                    result.reasoning += f" [Succeeded on attempt {attempt + 1}]"
-
-                return result
-
-            except Exception as e:
-                last_error = e
-
-                if attempt < max_retries:
-                    # Exponential backoff
-                    delay = retry_delay * (2 ** attempt)
-                    time.sleep(delay)
-                    continue
-                else:
-                    # Final attempt failed, return conservative result
-                    return LLMEvaluationResult(
-                        is_correct=False,
-                        reasoning=f"LLM evaluation failed after {max_retries + 1} attempts: {str(last_error)}",
-                        confidence=0.0,
-                        processing_time=0.0,
-                        error_message=f"Pair {pair_index}: {str(last_error)}"
-                    )
 
     def _parse_llm_response(self, response: str) -> Dict[str, Any]:
         """
@@ -293,15 +233,43 @@ Response:"""
             # Try to find JSON in the response
             response = response.strip()
 
-            # Look for JSON block
-            start_idx = response.find('{')
-            end_idx = response.rfind('}') + 1
+            # Look for JSON block - handle nested braces properly
+            brace_count = 0
+            start_idx = -1
+            end_idx = -1
 
-            if start_idx == -1 or end_idx == 0:
-                raise ValueError("No JSON found in response")
+            for i, char in enumerate(response):
+                if char == '{':
+                    if start_idx == -1:
+                        start_idx = i
+                    brace_count += 1
+                elif char == '}':
+                    brace_count -= 1
+                    if brace_count == 0 and start_idx != -1:
+                        end_idx = i + 1
+                        break
+
+            if start_idx == -1 or end_idx == -1:
+                raise ValueError("No complete JSON object found in response")
 
             json_str = response[start_idx:end_idx]
-            data = json.loads(json_str)
+
+            # Try to parse the JSON
+            try:
+                data = json.loads(json_str)
+            except json.JSONDecodeError as e:
+                # If parsing fails, try to clean up common issues
+                # Remove any trailing commas before closing braces/brackets
+                cleaned_json = json_str
+                import re
+                cleaned_json = re.sub(r',\s*([}\]])', r'\1', cleaned_json)
+
+                # Try parsing the cleaned version
+                try:
+                    data = json.loads(cleaned_json)
+                except json.JSONDecodeError:
+                    # If still failing, raise the original error with more context
+                    raise ValueError(f"Failed to parse JSON even after cleaning. Original error: {e}. JSON content: {json_str[:200]}...")
 
             # Validate required fields
             if "is_correct" not in data:
@@ -316,32 +284,6 @@ Response:"""
 
             return data
 
-        except (json.JSONDecodeError, ValueError, KeyError) as e:
+        except Exception as e:
             raise ValueError(f"Failed to parse LLM response: {e}")
 
-    def compute_exact_match(self, predicted: str, ground_truth: str) -> bool:
-        """
-        Backward compatibility method for exact match computation.
-
-        Args:
-            predicted: Agent's predicted answer
-            ground_truth: Ground truth answer
-
-        Returns:
-            True if exact match, False otherwise
-        """
-        return predicted.strip() == ground_truth.strip()
-
-    def compute_normalized_match(self, predicted: str, ground_truth: str) -> bool:
-        """
-        Backward compatibility method for normalized match computation.
-        Uses LLM evaluation by default.
-
-        Args:
-            predicted: Agent's predicted answer
-            ground_truth: Ground truth answer
-
-        Returns:
-            True if normalized match, False otherwise
-        """
-        return self.compute_llm_match(predicted, ground_truth)

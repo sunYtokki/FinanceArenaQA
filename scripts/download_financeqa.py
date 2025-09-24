@@ -1,15 +1,24 @@
 #!/usr/bin/env python3
 """
-Download and prepare FinanceQA benchmark dataset from HuggingFace.
+Download and prepare both FinanceQA benchmark and Kaggle financial Q&A datasets.
 
-This script downloads the FinanceQA dataset and prepares it for evaluation.
+This script downloads:
+1. FinanceQA benchmark dataset from HuggingFace (for evaluation)
+2. Kaggle financial Q&A dataset (for RAG knowledge base)
 """
 
 import os
 import json
+import sys
+import logging
 import pandas as pd
 from pathlib import Path
-from typing import Dict, List, Any
+from typing import Dict, List, Any, Optional
+import kagglehub
+
+# Setup logging
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+logger = logging.getLogger(__name__)
 
 try:
     from datasets import load_dataset
@@ -151,16 +160,105 @@ def analyze_dataset_structure(dataset_dir: str = "data/datasets/financeqa") -> D
     return analysis
 
 
+def download_kaggle_qa_dataset(output_dir: str = "data/datasets/financial_qa") -> bool:
+    """Download financial Q&A dataset from Kaggle using kagglehub for RAG knowledge base.
+
+    Args:
+        output_dir: Directory to save the dataset
+
+    Returns:
+        bool: True if download successful, False otherwise
+    """
+    try:
+        dataset_name = "yousefsaeedian/financial-q-and-a-10k"
+        logger.info(f"Downloading Kaggle dataset via kagglehub: {dataset_name}")
+
+        # Download dataset via kagglehub (returns cached path)
+        dataset_path = kagglehub.dataset_download(dataset_name)
+        dataset_path = Path(dataset_path)
+
+        # Create output directory
+        os.makedirs(output_dir, exist_ok=True)
+
+        # Copy dataset files to output_dir
+        for file in dataset_path.glob("*"):
+            if file.is_file():
+                target = Path(output_dir) / file.name
+                if not target.exists():
+                    target.write_bytes(file.read_bytes())
+
+        # Look for CSV files
+        dataset_dir = Path(output_dir)
+        csv_files = list(dataset_dir.glob("*.csv"))
+
+        if csv_files:
+            main_file = csv_files[0]
+            logger.info(f"Kaggle dataset downloaded: {main_file}")
+
+            # Preview dataset
+            try:
+                df = pd.read_csv(main_file, nrows=5)
+                logger.info(f"Dataset shape (preview): {df.shape}")
+                logger.info(f"Columns: {list(df.columns)}")
+
+                # Save dataset info
+                info_path = dataset_dir / "dataset_info.json"
+                with open(info_path, 'w', encoding='utf-8') as f:
+                    json.dump({
+                        'dataset_name': 'Financial Q&A (Kaggle)',
+                        'source': f'https://www.kaggle.com/datasets/{dataset_name}',
+                        'main_file': str(main_file.name),
+                        'columns': list(df.columns),
+                        'total_rows': len(pd.read_csv(main_file)),
+                        'download_timestamp': pd.Timestamp.now().isoformat()
+                    }, f, indent=2, ensure_ascii=False)
+
+                return True
+
+            except Exception as e:
+                logger.error(f"Failed to preview Kaggle dataset: {e}")
+                return False
+        else:
+            logger.error("No CSV files found in downloaded Kaggle dataset")
+            return False
+
+    except Exception as e:
+        logger.error(f"Failed to download Kaggle dataset via kagglehub: {e}")
+        return False
+    
+    
+
 if __name__ == "__main__":
-    # Download dataset
-    stats = download_financeqa_dataset()
+    logger.info("=== Financial Dataset Download Script ===")
 
-    # Analyze dataset structure
-    analysis = analyze_dataset_structure()
+    # Download FinanceQA benchmark dataset (always attempt)
+    logger.info("\n1. Downloading FinanceQA benchmark dataset...")
+    try:
+        stats = download_financeqa_dataset()
+        analysis = analyze_dataset_structure()
+        logger.info("✓ FinanceQA benchmark dataset downloaded successfully")
+    except Exception as e:
+        logger.error(f"✗ FinanceQA benchmark download failed: {e}")
 
-    print("\nFinanceQA dataset download and preparation completed!")
-    print("Files created:")
-    print("  - data/datasets/financeqa/*.jsonl (dataset splits)")
-    print("  - data/datasets/financeqa/*.csv (human-readable format)")
-    print("  - data/datasets/financeqa/dataset_info.json (metadata)")
-    print("  - data/datasets/financeqa/dataset_analysis.json (analysis)")
+    # Download Kaggle financial Q&A dataset (optional)
+    logger.info("\n2. Downloading Kaggle financial Q&A dataset...")
+    if download_kaggle_qa_dataset():
+        logger.info("✓ Kaggle financial Q&A dataset downloaded successfully")
+    else:
+        logger.error("✗ Kaggle dataset download failed")
+
+    logger.info("\n=== Download Summary ===")
+    logger.info("Files created:")
+    logger.info("FinanceQA Benchmark:")
+    logger.info("  - data/datasets/financeqa/*.jsonl (dataset splits)")
+    logger.info("  - data/datasets/financeqa/*.csv (human-readable format)")
+    logger.info("  - data/datasets/financeqa/dataset_info.json (metadata)")
+    logger.info("  - data/datasets/financeqa/dataset_analysis.json (analysis)")
+    logger.info("Kaggle Financial Q&A (if available):")
+    logger.info("  - data/datasets/financial_qa/*.csv (Q&A pairs)")
+    logger.info("  - data/datasets/financial_qa/dataset_info.json (metadata)")
+
+    logger.info("\nNext steps:")
+    logger.info("1. Review downloaded datasets in data/datasets/")
+    logger.info("2. Run data processing to prepare for RAG ingestion")
+    logger.info("3. Initialize ChromaDB collections for multi-source RAG")

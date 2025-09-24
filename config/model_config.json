@@ -1,8 +1,21 @@
 {
+  "_schema_documentation": {
+    "_comment": "Configuration schema for FinanceQA AI Agent",
+    "providers": "Model provider configurations with type, model_name, base_url, etc.",
+    "default_provider": "Default provider name to use for agent operations",
+    "evaluation": "Specific provider settings for evaluation runs",
+    "rag": {
+      "_description": "Simple RAG configuration",
+      "enabled": "Boolean to enable/disable RAG functionality",
+      "chroma_persist_dir": "Directory path for ChromaDB persistence",
+      "collection_name": "Name of ChromaDB collection",
+      "max_results": "Maximum number of results to retrieve"
+    }
+  },
   "providers": {
       "ollama": {
           "type": "ollama",
-          "model_name": "deepseek-r1:latest",
+          "model_name": "qwen3:30b",
           "base_url": "http://localhost:11434",
           "temperature": 0.1,
           "max_ctx": 65536,
@@ -13,10 +26,17 @@
   "default_provider": "ollama",
   "evaluation": {
       "provider": "ollama",
-      "model_name": "deepseek-r1:latest",
-      "base_url": "http://localhost:11435",
+      "model_name": "qwen3:30b",
+      "base_url": "http://localhost:11434",
       "temperature": 0.1,
       "max_ctx": 12000,
-      "max_predict": 1024
+      "max_predict": 7000,
+      "timeout": 300
+  },
+  "rag": {
+      "enabled": true,
+      "chroma_persist_dir": "./chroma_db",
+      "collection_name": "financial_patterns",
+      "max_results": 5
   }
 }

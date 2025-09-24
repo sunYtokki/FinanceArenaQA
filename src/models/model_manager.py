@@ -179,6 +179,34 @@ class ModelManager:
         provider = self.get_provider(provider_name)
         return await provider.generate(prompt, **kwargs)
 
+    def generate_sync(self, prompt: str, provider_name: Optional[str] = None, **kwargs) -> ModelResponse:
+        """Synchronous wrapper for generate method.
+
+        This method handles event loop management automatically and provides
+        a synchronous interface to the async generate method.
+
+        Args:
+            prompt: Input prompt
+            provider_name: Specific provider to use, if None uses default
+            **kwargs: Additional parameters for generation
+
+        Returns:
+            ModelResponse from the selected provider
+        """
+        import asyncio
+        import concurrent.futures
+
+        try:
+            # Check if we're already in an event loop
+            loop = asyncio.get_running_loop()
+            # If we're in an event loop, run in a separate thread
+            with concurrent.futures.ThreadPoolExecutor() as executor:
+                future = executor.submit(asyncio.run, self.generate(prompt, provider_name, **kwargs))
+                return future.result()
+        except RuntimeError:
+            # No event loop running, safe to use asyncio.run directly
+            return asyncio.run(self.generate(prompt, provider_name, **kwargs))
+
     def get_all_supported_models(self) -> Dict[str, List[str]]:
         """Get supported models for all providers.
 
@@ -190,9 +218,26 @@ class ModelManager:
 
     async def close_all(self):
         """Close all provider connections."""
-        for provider in self._providers.values():
+        for name, provider in self._providers.items():
             if hasattr(provider, 'close'):
-                await provider.close()
+                try:
+                    await provider.close()
+                    logger.debug(f"Closed provider: {name}")
+                except Exception as e:
+                    logger.warning(f"Error closing provider {name}: {e}")
+
+    async def cleanup(self):
+        """Alias for close_all for consistency."""
+        await self.close_all()
+
+    async def __aenter__(self):
+        """Async context manager entry."""
+        return self
+
+    async def __aexit__(self, exc_type, exc_val, exc_tb):
+        """Async context manager exit with cleanup."""
+        await self.close_all()
+        return False  # Don't suppress exceptions
 
 
 def create_model_manager_from_config(config_dict: Dict[str, Any]) -> ModelManager:
